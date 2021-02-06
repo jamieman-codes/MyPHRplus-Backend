@@ -8,10 +8,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
-public class MrphrplusApplication {
+public class MyphrplusApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(MrphrplusApplication.class, args);
+		SpringApplication.run(MyphrplusApplication.class, args);
+
+		GCPFireStore fireStore = new GCPFireStore();
 	}
 
 	@GetMapping("/hello")
