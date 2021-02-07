@@ -1,4 +1,4 @@
-package com.jws1g18.mrphrplus;
+package com.jws1g18.myphrplus;
 
 import java.io.File;
 import java.io.FileInputStream;

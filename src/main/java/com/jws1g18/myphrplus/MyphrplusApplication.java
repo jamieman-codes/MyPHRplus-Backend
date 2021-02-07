@@ -1,4 +1,4 @@
-package com.jws1g18.mrphrplus;
+package com.jws1g18.myphrplus;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
