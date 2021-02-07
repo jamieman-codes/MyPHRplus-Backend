@@ -32,6 +32,3 @@ build/
 ### VS Code ###
 .vscode/
 .gitignore
-
-### Secret Keys ###
-src/main/resources/myphrplus-backend-firebase-adminsdk-3funi-c8f3b2f5ed.json
