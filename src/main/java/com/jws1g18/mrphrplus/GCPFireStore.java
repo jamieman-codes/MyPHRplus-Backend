@@ -6,6 +6,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -18,42 +19,34 @@ import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.cloud.FirestoreClient;
-import com.google.firestore.v1.Document;
 
 public class GCPFireStore {
     Firestore db;
 
     public GCPFireStore() {
-        FileInputStream serviceAccount;
-        try {
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-            URL resource = classLoader.getResource("myphrplus-backend-firebase-adminsdk-3funi-c8f3b2f5ed.json");
-            File file = new File(resource.toURI());
-            serviceAccount = new FileInputStream(file);
-        } catch (FileNotFoundException ex) {
-            System.out.println("Credentials not found");
-            return;
-        } catch (URISyntaxException e) {
-            System.out.println("URISyntaxException");
-            return;
-        }
-
         GoogleCredentials credentials;
-        try {
-            credentials = GoogleCredentials.fromStream(serviceAccount);
+        try{
+            credentials = GoogleCredentials.getApplicationDefault();
         } catch (IOException ex) {
             System.out.println("IOException");
             return;
         }
-        FirebaseOptions options = new FirebaseOptions.Builder().setCredentials(credentials).build();
+        FirebaseOptions options = new FirebaseOptions.Builder()
+            .setCredentials(credentials)
+            .setProjectId("myphrplus-backend")
+            .build();
         FirebaseApp.initializeApp(options);
+
         this.db = FirestoreClient.getFirestore();
     }
 
     public static void main(String[] args) {
         GCPFireStore fireStore = new GCPFireStore();
-        fireStore.addUser("Hanna", "Proud", "proudie@email.com", "Patient", "1-1-1");
+        //fireStore.addUser("Hanna", "Proud", "proudie@email.com", "Patient", "1-1-1");
         //fireStore.deleteUser("wq4IqMmgTDnZCmgpZgRq");
+        ArrayList<String> attr = new ArrayList<>();
+        attr.add("Pog");
+        fireStore.updateAttributes("TbK8rYYS036rPTetEa7O", attr);
     }
 
     public Firestore getDB() {
@@ -98,6 +91,25 @@ public class GCPFireStore {
             } catch(ExecutionException ex){
                 return false;
             }
+        return true;
+    }
+
+    /**
+     * Updates a users set of attributes 
+     * @param userID Users ID 
+     * @param attributes Array of attributes 
+     * @return True if successful
+     */
+    public Boolean updateAttributes(String userID, ArrayList<String> attributes){
+        DocumentReference docRef = this.db.collection("users").document(userID);
+        ApiFuture<WriteResult> future = docRef.update("attributes", attributes);
+        try{
+            future.get();
+        } catch(InterruptedException ex){
+            return false;
+        } catch(ExecutionException ex){
+            return false;
+        }
         return true;
     }
 }
