@@ -1,11 +1,6 @@
 package com.jws1g18.myphrplus;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,16 +20,14 @@ public class GCPFireStore {
 
     public GCPFireStore() {
         GoogleCredentials credentials;
-        try{
+        try {
             credentials = GoogleCredentials.getApplicationDefault();
         } catch (IOException ex) {
             System.out.println("IOException");
             return;
         }
-        FirebaseOptions options = new FirebaseOptions.Builder()
-            .setCredentials(credentials)
-            .setProjectId("myphrplus-backend")
-            .build();
+        FirebaseOptions options = new FirebaseOptions.Builder().setCredentials(credentials)
+                .setProjectId("myphrplus-backend").build();
         FirebaseApp.initializeApp(options);
 
         this.db = FirestoreClient.getFirestore();
@@ -42,8 +35,8 @@ public class GCPFireStore {
 
     public static void main(String[] args) {
         GCPFireStore fireStore = new GCPFireStore();
-        //fireStore.addUser("Hanna", "Proud", "proudie@email.com", "Patient", "1-1-1");
-        //fireStore.deleteUser("wq4IqMmgTDnZCmgpZgRq");
+        // fireStore.addUser("Hanna", "Proud", "proudie@email.com", "Patient", "1-1-1");
+        // fireStore.deleteUser("wq4IqMmgTDnZCmgpZgRq");
         ArrayList<String> attr = new ArrayList<>();
         attr.add("Pog");
         fireStore.updateAttributes("TbK8rYYS036rPTetEa7O", attr);
@@ -54,60 +47,61 @@ public class GCPFireStore {
     }
 
     /**
-     * Adds a user to firestore
-     * Returns the user ID
+     * Adds a user to firestore Returns the user ID
      */
-    public String addUser(String firstName, String lastName, String email, String role, String dob){
+    public String addUser(String uid, String name, String email, String role) {
         Map<String, Object> data = new HashMap<>();
-        data.put("firstName", firstName);
-        data.put("lastName", lastName);
+        data.put("name", name);
         data.put("e-mail", email);
-        data.put("DOB", dob);
         data.put("role", role);
-        
-        ApiFuture<DocumentReference> addedDocRef = this.db.collection("users").add(data);
 
-        try{
-            return addedDocRef.get().getId();
-        } catch(InterruptedException ex){
-            return null;
-        } catch(ExecutionException ex){
-            return null;
+        DocumentReference docRef = this.db.collection("users").document(uid);
+        ApiFuture<WriteResult> result = docRef.set(data);
+
+        try {
+            String res = result.get().getUpdateTime().toString();
+            return "Add successful at " + res;
+        } catch (InterruptedException ex) {
+            return "Add failed " + ex.getMessage();
+        } catch (ExecutionException ex) {
+            return "Add failed " + ex.getMessage();
         }
     }
 
     /**
      * Deletes a user from the firestore given their user ID
+     * 
      * @param userID
-     * @return True if successful, False if failed 
+     * @return True if successful, False if failed
      */
-    public Boolean deleteUser(String userID){
+    public Boolean deleteUser(String userID) {
         ApiFuture<WriteResult> writeResult = this.db.collection("users").document(userID).delete();
-        try{
-            //System.out.println("Update time : " + writeResult.get().getUpdateTime());
+        try {
+            // System.out.println("Update time : " + writeResult.get().getUpdateTime());
             writeResult.get();
-            } catch(InterruptedException ex){
-                return false;
-            } catch(ExecutionException ex){
-                return false;
-            }
+        } catch (InterruptedException ex) {
+            return false;
+        } catch (ExecutionException ex) {
+            return false;
+        }
         return true;
     }
 
     /**
-     * Updates a users set of attributes 
-     * @param userID Users ID 
-     * @param attributes Array of attributes 
+     * Updates a users set of attributes
+     * 
+     * @param userID     Users ID
+     * @param attributes Array of attributes
      * @return True if successful
      */
-    public Boolean updateAttributes(String userID, ArrayList<String> attributes){
+    public Boolean updateAttributes(String userID, ArrayList<String> attributes) {
         DocumentReference docRef = this.db.collection("users").document(userID);
         ApiFuture<WriteResult> future = docRef.update("attributes", attributes);
-        try{
+        try {
             future.get();
-        } catch(InterruptedException ex){
+        } catch (InterruptedException ex) {
             return false;
-        } catch(ExecutionException ex){
+        } catch (ExecutionException ex) {
             return false;
         }
         return true;
