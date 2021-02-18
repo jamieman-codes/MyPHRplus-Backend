@@ -18,7 +18,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Override
     protected void configure(HttpSecurity security) throws Exception {
         security.httpBasic().disable(); // Disables Spring login page, will be using Google Firebase Auth
-        security.cors().and().csrf().disable(); // Allows post requests
+        security.csrf().disable(); // Allows post requests without a nonce
+        security.cors();
     }
 
     @Bean
@@ -26,6 +27,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(Arrays.asList(CustomConfig.cors));
         configuration.setAllowedMethods(Arrays.asList("POST"));
+        configuration.setAllowedHeaders(Arrays.asList("*")); // May need to fine tune. Works for now
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
