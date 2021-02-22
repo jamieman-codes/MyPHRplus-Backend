@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -53,8 +54,8 @@ public class MyphrplusApplication {
 	 * @return Returns HTTP response code and user information
 	 */
 	@RequestMapping(method = RequestMethod.GET, path = "/getUser")
-	public ResponseEntity<?> getUser(@RequestParam(name = "uid", required = true) String uid) {
-		FunctionResponse authResponse = fireBase.verifyUidToken(uid);
+	public ResponseEntity<?> getUser(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (authResponse.successful()) {
 			FunctionResponse getResponse = fireBase.getUser(authResponse.getMessage());
 			if (getResponse.successful()) {

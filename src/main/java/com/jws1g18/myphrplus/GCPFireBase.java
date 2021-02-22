@@ -82,7 +82,6 @@ public class GCPFireBase {
             DocumentSnapshot document = future.get();
             if (document.exists()) {
                 User user = document.toObject(User.class);
-                logger.info(user.name + " " + user.email + " " + user.role);
                 return new FunctionResponse(true, user.convertToJson());
             } else {
                 return new FunctionResponse(false, "User not found in database");

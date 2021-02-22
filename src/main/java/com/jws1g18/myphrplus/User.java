@@ -3,7 +3,7 @@ package com.jws1g18.myphrplus;
 import javax.json.Json;
 
 public class User {
-    public String uid = null;
+    public String uid = "";
     public String name;
     public String email;
     public String role;
