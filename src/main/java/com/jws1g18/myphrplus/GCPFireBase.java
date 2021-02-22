@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutionException;
 import com.google.api.core.ApiFuture;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.FirebaseApp;
@@ -53,7 +54,7 @@ public class GCPFireBase {
     public FunctionResponse addUser(String uid, String name, String email, String role) {
         Map<String, Object> data = new HashMap<>();
         data.put("name", name);
-        data.put("e-mail", email);
+        data.put("email", email);
         data.put("role", role);
 
         DocumentReference docRef = this.db.collection("users").document(uid);
@@ -68,6 +69,30 @@ public class GCPFireBase {
         } catch (ExecutionException ex) {
             logger.error("Adding user " + name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Gets user information from firestore
+     */
+    public FunctionResponse getUser(String uid) {
+        DocumentReference docRef = this.db.collection("users").document(uid);
+        ApiFuture<DocumentSnapshot> future = docRef.get();
+        try {
+            DocumentSnapshot document = future.get();
+            if (document.exists()) {
+                User user = document.toObject(User.class);
+                logger.info(user.name + " " + user.email + " " + user.role);
+                return new FunctionResponse(true, user.convertToJson());
+            } else {
+                return new FunctionResponse(false, "User not found in database");
+            }
+        } catch (InterruptedException ex) {
+            logger.error("Get failed", ex);
+            return new FunctionResponse(false, "Get failed with " + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Get failed", ex);
+            return new FunctionResponse(false, "Get failed with" + ex.getMessage());
         }
     }
 
