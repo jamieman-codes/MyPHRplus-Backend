@@ -13,12 +13,19 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.cloud.FirestoreClient;
 
-public class GCPFireStore {
-    Firestore db;
+import org.slf4j.Logger;
 
-    public GCPFireStore() {
+public class GCPFireBase {
+    Firestore db;
+    FirebaseAuth auth;
+    Logger logger;
+
+    public GCPFireBase(Logger logger) {
         GoogleCredentials credentials;
         try {
             credentials = GoogleCredentials.getApplicationDefault();
@@ -31,15 +38,9 @@ public class GCPFireStore {
         FirebaseApp.initializeApp(options);
 
         this.db = FirestoreClient.getFirestore();
-    }
+        this.auth = FirebaseAuth.getInstance();
 
-    public static void main(String[] args) {
-        GCPFireStore fireStore = new GCPFireStore();
-        // fireStore.addUser("Hanna", "Proud", "proudie@email.com", "Patient", "1-1-1");
-        // fireStore.deleteUser("wq4IqMmgTDnZCmgpZgRq");
-        ArrayList<String> attr = new ArrayList<>();
-        attr.add("Pog");
-        fireStore.updateAttributes("TbK8rYYS036rPTetEa7O", attr);
+        this.logger = logger;
     }
 
     public Firestore getDB() {
@@ -49,7 +50,7 @@ public class GCPFireStore {
     /**
      * Adds a user to firestore Returns the user ID
      */
-    public String addUser(String uid, String name, String email, String role) {
+    public FunctionResponse addUser(String uid, String name, String email, String role) {
         Map<String, Object> data = new HashMap<>();
         data.put("name", name);
         data.put("e-mail", email);
@@ -60,11 +61,13 @@ public class GCPFireStore {
 
         try {
             String res = result.get().getUpdateTime().toString();
-            return "Add successful at " + res;
+            return new FunctionResponse(true, "Add successful at " + res);
         } catch (InterruptedException ex) {
-            return "Add failed " + ex.getMessage();
+            logger.error("Adding user " + name + " failed", ex);
+            return new FunctionResponse(false, "Add failed " + ex.getMessage());
         } catch (ExecutionException ex) {
-            return "Add failed " + ex.getMessage();
+            logger.error("Adding user " + name + " failed", ex);
+            return new FunctionResponse(false, "Add failed " + ex.getMessage());
         }
     }
 
@@ -105,5 +108,15 @@ public class GCPFireStore {
             return false;
         }
         return true;
+    }
+
+    public FunctionResponse verifyUidToken(String uidToken) {
+        try {
+            FirebaseToken decodedToken = this.auth.verifyIdToken(uidToken);
+            return new FunctionResponse(true, decodedToken.getUid());
+        } catch (FirebaseAuthException e) {
+            logger.error("Authentication failed with error code: " + e.getErrorCode(), e);
+            return new FunctionResponse(false, "Failed with error code: " + e.getErrorCode());
+        }
     }
 }

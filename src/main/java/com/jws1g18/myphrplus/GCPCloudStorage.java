@@ -13,63 +13,58 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
 import com.google.cloud.storage.StorageOptions;
 
+import org.slf4j.Logger;
+
 public class GCPCloudStorage {
     Storage storage;
     String projectID = "myphrplus-backend";
+    Logger logger;
 
-    public GCPCloudStorage(){
+    public GCPCloudStorage(Logger logger) {
         this.storage = StorageOptions.getDefaultInstance().getService();
-    }
 
-    public static void main(String[] args) {
-        GCPCloudStorage cs = new GCPCloudStorage();
-        //cs.createBucket("southampton-general-hospital");
-        //cs.uploadObject("southampton-general-hospital-myphrplus-backend", "test/liverpool", "C://Users/jamie/Downloads/liverpool-gettyimages-12578371241.jpeg");
-        cs.downloadObject("southampton-general-hospital-myphrplus-backend", "test/liverpool", "C://Users/jamie/OneDrive/Documents/liverpool.jpeg");
+        this.logger = logger;
     }
 
     /**
      * Creates a bucket given a bucket name
+     * 
      * @param bucketName
      * @return The created bucket
      */
-    public Bucket createBucket(String bucketName){
+    public Bucket createBucket(String bucketName) {
         bucketName += "-myphrplus-backend";
 
         StorageClass storageClass = StorageClass.STANDARD;
-        String location = "EUROPE-WEST2"; //London 
+        String location = "EUROPE-WEST2"; // London
 
-        Bucket bucket = 
-            this.storage.create(
-                BucketInfo.newBuilder(bucketName)
-                    .setStorageClass(storageClass)
-                    .setLocation(location)
-                    .build());
-        
-                    
-        //System.out.println("Created bucket "+ bucket.getName());
+        Bucket bucket = this.storage
+                .create(BucketInfo.newBuilder(bucketName).setStorageClass(storageClass).setLocation(location).build());
+
+        // System.out.println("Created bucket "+ bucket.getName());
 
         return bucket;
     }
 
     /**
-     * FUNCTION WILL NEED CHANGING. THIS WILL ONLY WORK WITH LOCAL FILES!!!
-     * Uploads an object to google cloud storage
-     * @param bucketName 
+     * FUNCTION WILL NEED CHANGING. THIS WILL ONLY WORK WITH LOCAL FILES!!! Uploads
+     * an object to google cloud storage
+     * 
+     * @param bucketName
      * @param objectName ID of the GCP object
-     * @param filePath path to file on the system 
+     * @param filePath   path to file on the system
      */
-    public void uploadObject(String bucketName, String objectName, String filePath){
+    public void uploadObject(String bucketName, String objectName, String filePath) {
         BlobId blobId = BlobId.of(bucketName, objectName);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-        try{
+        try {
             this.storage.create(blobInfo, Files.readAllBytes(Paths.get(filePath)));
-        } catch (IOException ex){
+        } catch (IOException ex) {
             return;
         }
     }
 
-    public void downloadObject(String bucketName, String objectName, String destFilePath){
+    public void downloadObject(String bucketName, String objectName, String destFilePath) {
         Blob blob = storage.get(BlobId.of(bucketName, objectName));
         blob.downloadTo(Paths.get(destFilePath));
 
