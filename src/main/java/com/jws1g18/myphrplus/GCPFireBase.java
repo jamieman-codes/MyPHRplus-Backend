@@ -101,17 +101,18 @@ public class GCPFireBase {
      * @param userID
      * @return True if successful, False if failed
      */
-    public Boolean deleteUser(String userID) {
+    public FunctionResponse deleteUser(String userID) {
         ApiFuture<WriteResult> writeResult = this.db.collection("users").document(userID).delete();
         try {
-            // System.out.println("Update time : " + writeResult.get().getUpdateTime());
             writeResult.get();
+            return new FunctionResponse(true, "User Deleted");
         } catch (InterruptedException ex) {
-            return false;
+            logger.error("Deletion failed", ex);
+            return new FunctionResponse(false, "Deletion failed with " + ex.getMessage());
         } catch (ExecutionException ex) {
-            return false;
+            logger.error("Deletion failed", ex);
+            return new FunctionResponse(false, "Deletion failed with " + ex.getMessage());
         }
-        return true;
     }
 
     /**

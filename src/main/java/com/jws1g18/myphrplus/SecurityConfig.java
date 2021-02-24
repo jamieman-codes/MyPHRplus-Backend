@@ -14,6 +14,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    // Deployment
+    public static final String corsGAE = "https://myphrplus-frontend.nw.r.appspot.com";
+
+    // Local
+    public static final String corsLocal = "http://192.168.0.27:8080";
 
     @Override
     protected void configure(HttpSecurity security) throws Exception {
@@ -23,7 +28,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(CustomConfig.corsGAE, CustomConfig.corsLocal));
+        configuration.setAllowedOrigins(Arrays.asList(corsGAE, corsLocal));
         configuration.setAllowedMethods(Arrays.asList("POST", "GET"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

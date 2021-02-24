@@ -67,4 +67,25 @@ public class MyphrplusApplication {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 	}
+
+	/**
+	 * Deletes a user from the firebase and firebase auth
+	 * 
+	 * @param uidToken Firebase ID token
+	 * @return
+	 */
+	@RequestMapping(method = RequestMethod.GET, path = "/deleteUser")
+	public ResponseEntity<?> deleteUser(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (authResponse.successful()) {
+			FunctionResponse deleteResponse = fireBase.deleteUser(authResponse.getMessage());
+			if (deleteResponse.successful()) {
+				return new ResponseEntity<>(deleteResponse.getMessage(), HttpStatus.OK);
+			} else {
+				return new ResponseEntity<>(deleteResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
 }
