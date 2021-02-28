@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @SpringBootApplication
 @RestController
@@ -86,6 +87,38 @@ public class MyphrplusApplication {
 			}
 		} else {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value = "/uploadFile", method = RequestMethod.POST, consumes = { "multipart/form-data" })
+	public ResponseEntity<?> uploadFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
+			@RequestParam(name = "file") MultipartFile file) {
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (authResponse.successful()) {
+			FunctionResponse uploadResponse = cloudStorage
+					.uploadObject("southampton-general-hospital-myphrplus-backend", "testFile", file);
+			if (uploadResponse.successful()) {
+				return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.OK);
+			} else {
+				return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_GATEWAY);
+		}
+	}
+
+	@RequestMapping(value = "/getUserRole", method = RequestMethod.GET)
+	public ResponseEntity<?> getUserRole(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (authResponse.successful()) {
+			FunctionResponse getResponse = fireBase.getRole(authResponse.getMessage());
+			if (getResponse.successful()) {
+				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
+			} else {
+				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_GATEWAY);
 		}
 	}
 }

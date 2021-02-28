@@ -1,5 +1,6 @@
 package com.jws1g18.myphrplus;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -12,8 +13,11 @@ import com.google.cloud.storage.BucketInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
 import com.google.cloud.storage.StorageOptions;
+import com.google.cloud.storage.Bucket.BlobTargetOption;
+import com.google.cloud.storage.Storage.PredefinedAcl;
 
 import org.slf4j.Logger;
+import org.springframework.web.multipart.MultipartFile;
 
 public class GCPCloudStorage {
     Storage storage;
@@ -47,20 +51,20 @@ public class GCPCloudStorage {
     }
 
     /**
-     * FUNCTION WILL NEED CHANGING. THIS WILL ONLY WORK WITH LOCAL FILES!!! Uploads
-     * an object to google cloud storage
+     * Uploads an object to google cloud storage
      * 
      * @param bucketName
      * @param objectName ID of the GCP object
      * @param filePath   path to file on the system
      */
-    public void uploadObject(String bucketName, String objectName, String filePath) {
+    public FunctionResponse uploadObject(String bucketName, String objectName, MultipartFile file) {
         BlobId blobId = BlobId.of(bucketName, objectName);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
         try {
-            this.storage.create(blobInfo, Files.readAllBytes(Paths.get(filePath)));
+            this.storage.create(blobInfo, file.getBytes());
+            return new FunctionResponse(true, "Upload successful");
         } catch (IOException ex) {
-            return;
+            return new FunctionResponse(false, "Upload failed");
         }
     }
 
