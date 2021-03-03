@@ -6,7 +6,8 @@ public class User {
     public String uid = "";
     public String name;
     public String email;
-    public String role;
+    public String password = "";
+    public String role = "";
 
     public String convertToJson() {
         return Json.createObjectBuilder().add("name", name).add("email", email).add("role", role).build().toString();

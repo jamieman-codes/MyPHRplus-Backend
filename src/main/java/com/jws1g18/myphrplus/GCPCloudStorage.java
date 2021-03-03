@@ -36,8 +36,9 @@ public class GCPCloudStorage {
      * @param bucketName
      * @return The created bucket
      */
-    public Bucket createBucket(String bucketName) {
+    public String createBucket(String bucketName) {
         bucketName += "-myphrplus-backend";
+        logger.info("Creating bucket " + bucketName);
 
         StorageClass storageClass = StorageClass.STANDARD;
         String location = "EUROPE-WEST2"; // London
@@ -47,7 +48,7 @@ public class GCPCloudStorage {
 
         // System.out.println("Created bucket "+ bucket.getName());
 
-        return bucket;
+        return bucket.getName();
     }
 
     /**

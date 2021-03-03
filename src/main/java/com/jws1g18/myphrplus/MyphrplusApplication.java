@@ -90,6 +90,13 @@ public class MyphrplusApplication {
 		}
 	}
 
+	/***
+	 * Uploads a file to the cloud storage
+	 * 
+	 * @param uidToken
+	 * @param file
+	 * @return
+	 */
 	@RequestMapping(value = "/uploadFile", method = RequestMethod.POST, consumes = { "multipart/form-data" })
 	public ResponseEntity<?> uploadFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
 			@RequestParam(name = "file") MultipartFile file) {
@@ -103,10 +110,16 @@ public class MyphrplusApplication {
 				return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
 		} else {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_GATEWAY);
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 	}
 
+	/**
+	 * Returns a users role
+	 * 
+	 * @param uidToken
+	 * @return
+	 */
 	@RequestMapping(value = "/getUserRole", method = RequestMethod.GET)
 	public ResponseEntity<?> getUserRole(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
@@ -118,7 +131,46 @@ public class MyphrplusApplication {
 				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
 		} else {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_GATEWAY);
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 	}
+
+	/**
+	 * Creates a new Data Provider account and bucket
+	 * 
+	 * @param uidToken
+	 * @param user
+	 * @return
+	 */
+	@RequestMapping(value = "/newDP", method = RequestMethod.POST)
+	public ResponseEntity<?> newDP(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user) {
+		logger.info("Incoming request to add DP");
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (authResponse.successful()) {
+			logger.info("Auth check successful");
+			// Check user is admin
+			FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+			if (roleCheck.successful() && roleCheck.getMessage().equals("admin")) {
+				logger.info("Perm check successful");
+				// Create bucket for DP
+				String bucketName = cloudStorage.createBucket(user.name.replace(" ", "-").toLowerCase());
+				// Create DP profile on firebase
+				FunctionResponse addResponse = fireBase.addDP(user.name, user.email, user.password, bucketName);
+				if (addResponse.successful()) {
+					return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
+				} else {
+					return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
+				}
+			} else if (roleCheck.successful() && !roleCheck.getMessage().equals("admin")) {
+				return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+			} else {
+				return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value = "/newDR",  method = RequestMethod.POST)
+	public ResponseEntity<> newDR(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user)
 }

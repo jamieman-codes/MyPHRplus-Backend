@@ -17,6 +17,8 @@ import com.google.firebase.FirebaseOptions;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
+import com.google.firebase.auth.UserRecord;
+import com.google.firebase.auth.UserRecord.CreateRequest;
 import com.google.firebase.cloud.FirestoreClient;
 
 import org.slf4j.Logger;
@@ -173,6 +175,44 @@ public class GCPFireBase {
         } catch (ExecutionException ex) {
             logger.error("Get failed", ex);
             return new FunctionResponse(false, "Get failed with " + ex.getMessage());
+        }
+    }
+
+    public FunctionResponse addDP(String dpName, String email, String password, String bucketName) {
+        // Create User with firebase auth
+        CreateRequest request = new CreateRequest().setDisplayName(dpName).setEmail(email).setPassword(password);
+        UserRecord userRecord;
+        try {
+            userRecord = auth.createUser(request);
+            logger.info("User created with Firebase");
+        } catch (FirebaseAuthException ex) {
+            logger.error("Add failed", ex);
+            return new FunctionResponse(false, "Get failed with " + ex.getMessage());
+        }
+        // Add user info to firestore
+        Map<String, Object> data = new HashMap<>();
+        data.put("name", dpName);
+        data.put("email", email);
+        data.put("role", "DP");
+        data.put("bucketName", bucketName);
+
+        // Create attributes array
+        ArrayList<String> attributes = new ArrayList<>();
+        attributes.add("DP");
+        attributes.add(userRecord.getUid());
+        data.put("attributes", attributes);
+
+        DocumentReference docRef = this.db.collection("users").document(userRecord.getUid());
+        ApiFuture<WriteResult> result = docRef.set(data);
+        try {
+            String res = result.get().getUpdateTime().toString();
+            return new FunctionResponse(true, "Add successful at " + res);
+        } catch (InterruptedException ex) {
+            logger.error("Adding user " + dpName + " failed", ex);
+            return new FunctionResponse(false, "Add failed " + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Adding user " + dpName + " failed", ex);
+            return new FunctionResponse(false, "Add failed " + ex.getMessage());
         }
     }
 }
