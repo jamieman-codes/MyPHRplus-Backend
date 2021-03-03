@@ -1,8 +1,6 @@
 package com.jws1g18.myphrplus;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import com.google.cloud.storage.Blob;
@@ -13,8 +11,6 @@ import com.google.cloud.storage.BucketInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
 import com.google.cloud.storage.StorageOptions;
-import com.google.cloud.storage.Bucket.BlobTargetOption;
-import com.google.cloud.storage.Storage.PredefinedAcl;
 
 import org.slf4j.Logger;
 import org.springframework.web.multipart.MultipartFile;

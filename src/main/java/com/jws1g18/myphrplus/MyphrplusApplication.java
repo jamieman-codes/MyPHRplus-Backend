@@ -1,5 +1,9 @@
 package com.jws1g18.myphrplus;
 
+import com.jws1g18.myphrplus.DTOS.DP;
+import com.jws1g18.myphrplus.DTOS.DR;
+import com.jws1g18.myphrplus.DTOS.Patient;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -36,8 +40,7 @@ public class MyphrplusApplication {
 	public ResponseEntity<?> registerPatient(@RequestBody Patient patient) {
 		FunctionResponse authResponse = fireBase.verifyUidToken(patient.uid);
 		if (authResponse.successful()) {
-			FunctionResponse addResponse = fireBase.addUser(authResponse.getMessage(), patient.name, patient.email,
-					patient.role);
+			FunctionResponse addResponse = fireBase.addPatient(authResponse.getMessage(), patient);
 			if (addResponse.successful()) {
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.CREATED);
 			} else {
@@ -143,7 +146,7 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/newDP", method = RequestMethod.POST)
-	public ResponseEntity<?> newDP(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user) {
+	public ResponseEntity<?> newDP(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody DP user) {
 		logger.info("Incoming request to add DP");
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (authResponse.successful()) {
@@ -155,7 +158,7 @@ public class MyphrplusApplication {
 				// Create bucket for DP
 				String bucketName = cloudStorage.createBucket(user.name.replace(" ", "-").toLowerCase());
 				// Create DP profile on firebase
-				FunctionResponse addResponse = fireBase.addDP(user.name, user.email, user.password, bucketName);
+				FunctionResponse addResponse = fireBase.addDP(user, bucketName);
 				if (addResponse.successful()) {
 					return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
 				} else {
@@ -171,6 +174,29 @@ public class MyphrplusApplication {
 		}
 	}
 
-	@RequestMapping(value = "/newDR",  method = RequestMethod.POST)
-	public ResponseEntity<> newDR(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user)
+	@RequestMapping(value = "/newDR", method = RequestMethod.POST)
+	public ResponseEntity<?> newDR(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody DR user) {
+		logger.info("Incoming request to add DR");
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (authResponse.successful()) {
+			logger.info("Auth check successful");
+			// Check user is DP
+			FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+			if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
+				logger.info("Perm check successful");
+				FunctionResponse addResponse = fireBase.addDR(user, authResponse.getMessage());
+				if (addResponse.successful()) {
+					return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
+				} else {
+					return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
+				}
+			} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
+				return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+			} else {
+				return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
 }

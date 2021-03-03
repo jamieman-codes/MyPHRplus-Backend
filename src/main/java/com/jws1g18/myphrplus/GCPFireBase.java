@@ -3,14 +3,21 @@ package com.jws1g18.myphrplus;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ExecutionException;
 
 import com.google.api.core.ApiFuture;
 import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.FieldValue;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
@@ -21,12 +28,18 @@ import com.google.firebase.auth.UserRecord;
 import com.google.firebase.auth.UserRecord.CreateRequest;
 import com.google.firebase.cloud.FirestoreClient;
 
+import com.jws1g18.myphrplus.DTOS.DP;
+import com.jws1g18.myphrplus.DTOS.DR;
+import com.jws1g18.myphrplus.DTOS.Patient;
+import com.jws1g18.myphrplus.DTOS.User;
+
 import org.slf4j.Logger;
 
 public class GCPFireBase {
     Firestore db;
     FirebaseAuth auth;
     Logger logger;
+    Random rand;
 
     public GCPFireBase(Logger logger) {
         GoogleCredentials credentials;
@@ -44,46 +57,142 @@ public class GCPFireBase {
         this.auth = FirebaseAuth.getInstance();
 
         this.logger = logger;
+        this.rand = new Random();
     }
 
     public Firestore getDB() {
         return this.db;
     }
 
-    /**
-     * Adds a user to firestore Returns the user ID
+    /***
+     * Adds a user to firestore
+     * 
+     * @param data The user data to be stored
+     * @param uid  Firebase Auth uid of the user
+     * @return Write Result of the add
+     * @throws InterruptedException
+     * @throws ExecutionException
      */
-    public FunctionResponse addUser(String uid, String name, String email, String role) {
-        Map<String, Object> data = new HashMap<>();
-        data.put("name", name);
-        data.put("email", email);
-        data.put("role", role);
-
+    private WriteResult addUser(Map<String, Object> data, String uid) throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(uid);
         ApiFuture<WriteResult> result = docRef.set(data);
+        return result.get();
+    }
 
+    /***
+     * Performs a query on the users collection
+     * 
+     * @param field Field to search
+     * @param value Value to find in field
+     * @return Query Snapshot, can be used to obtain all documents
+     * @throws InterruptedException
+     * @throws ExecutionException
+     */
+    private QuerySnapshot queryUsers(String field, String value) throws InterruptedException, ExecutionException {
+        CollectionReference user = this.db.collection("users");
+        Query query = user.whereEqualTo(field, value);
+        return query.get().get();
+    }
+
+    /***
+     * Adds a patient to the firestore, randomly assigns them a DP and a DR
+     * 
+     * @param uid  Firebase auth uid
+     * @param user Patient object containing user info
+     * @return Function Response containing a success value and a message
+     */
+    public FunctionResponse addPatient(String uid, Patient user) {
+        // Randomly select hospital and doctor for patient.
+        QuerySnapshot query;
         try {
-            String res = result.get().getUpdateTime().toString();
+            query = queryUsers("role", "DP");
+        } catch (InterruptedException ex) {
+            logger.error("Getting DP for " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Getting DP failed" + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Getting DP for " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Getting DP failed" + ex.getMessage());
+        }
+        List<QueryDocumentSnapshot> dPdocs = query.getDocuments();
+        if (dPdocs.isEmpty()) {
+            logger.error("No DPs found");
+            return new FunctionResponse(false, "No DPs found in FireStore");
+        }
+        QueryDocumentSnapshot dPdoc = dPdocs.get(rand.nextInt(dPdocs.size())); // Get random DP
+        DP dp = dPdoc.toObject(DP.class);
+        ArrayList<String> drList = dp.dataRequesters;
+        String dr = drList.get(rand.nextInt(drList.size())); // Get random DR
+
+        // Create firestore data
+        Map<String, Object> data = new HashMap<>();
+        data.put("name", user.name);
+        data.put("email", user.email);
+        data.put("role", user.role);
+        data.put("nhsnum", user.nhsnum);
+        data.put("bucketName", dp.bucketName);
+        data.put("parent", dr);
+
+        // Create attributes array
+        ArrayList<String> attributes = new ArrayList<>();
+        attributes.add("DR");
+        attributes.add(uid);
+        data.put("attributes", attributes);
+
+        // Update parent with child info
+        try {
+            updateArray(dr, "patients", uid);
+        } catch (InterruptedException ex) {
+            logger.error("Updating parent information for  " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Updating parent information failed " + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Updating parent information for  " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Updating parent information failed " + ex.getMessage());
+        }
+
+        // Add to firestore
+        try {
+            String res = addUser(data, uid).getUpdateTime().toString();
             return new FunctionResponse(true, "Add successful at " + res);
         } catch (InterruptedException ex) {
-            logger.error("Adding user " + name + " failed", ex);
+            logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
         } catch (ExecutionException ex) {
-            logger.error("Adding user " + name + " failed", ex);
+            logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
         }
     }
 
-    /**
-     * Gets user information from firestore
+    /***
+     * Gets a user from the firebase
+     * 
+     * @param uid Firebase auth id of the user
+     * @return User object
+     * @throws InterruptedException
+     * @throws ExecutionException
      */
-    public FunctionResponse getUser(String uid) {
+    private User getUserObject(String uid) throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(uid);
         ApiFuture<DocumentSnapshot> future = docRef.get();
+        DocumentSnapshot document = future.get();
+        if (document.exists()) {
+            User user = document.toObject(User.class);
+            return user;
+        } else {
+            return null;
+        }
+
+    }
+
+    /***
+     * Gets user information from firebase
+     * 
+     * @param uid Firebase auth id of the user
+     * @return Returns JSON containing the user info if successful
+     */
+    public FunctionResponse getUser(String uid) {
         try {
-            DocumentSnapshot document = future.get();
-            if (document.exists()) {
-                User user = document.toObject(User.class);
+            User user = getUserObject(uid);
+            if (user != null) {
                 return new FunctionResponse(true, user.convertToJson());
             } else {
                 return new FunctionResponse(false, "User not found in database");
@@ -118,23 +227,18 @@ public class GCPFireBase {
     }
 
     /**
-     * Updates a users set of attributes
+     * Updates a user array
      * 
-     * @param userID     Users ID
-     * @param attributes Array of attributes
+     * @param userID Users ID
+     * @param array  Array to be updated
+     * @param value  Value to be added
      * @return True if successful
      */
-    public Boolean updateAttributes(String userID, ArrayList<String> attributes) {
+    public WriteResult updateArray(String userID, String array, String value)
+            throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(userID);
-        ApiFuture<WriteResult> future = docRef.update("attributes", attributes);
-        try {
-            future.get();
-        } catch (InterruptedException ex) {
-            return false;
-        } catch (ExecutionException ex) {
-            return false;
-        }
-        return true;
+        ApiFuture<WriteResult> future = docRef.update(array, FieldValue.arrayUnion(value));
+        return future.get();
     }
 
     /***
@@ -178,22 +282,44 @@ public class GCPFireBase {
         }
     }
 
-    public FunctionResponse addDP(String dpName, String email, String password, String bucketName) {
+    /***
+     * Creates a user with firebase authentication
+     * 
+     * @param username
+     * @param email
+     * @param password
+     * @return A user record object that can be used to obtain the uid
+     * @throws FirebaseAuthException
+     */
+    private UserRecord registerUser(String username, String email, String password) throws FirebaseAuthException {
         // Create User with firebase auth
-        CreateRequest request = new CreateRequest().setDisplayName(dpName).setEmail(email).setPassword(password);
+        CreateRequest request = new CreateRequest().setDisplayName(username).setEmail(email).setPassword(password);
+        UserRecord userRecord = auth.createUser(request);
+        logger.info("User created with Firebase");
+        return userRecord;
+    }
+
+    /***
+     * Adds a data provider to the system
+     * 
+     * @param user       DP object containing user info
+     * @param bucketName Bucketname of created bucket
+     * @return
+     */
+    public FunctionResponse addDP(DP user, String bucketName) {
         UserRecord userRecord;
         try {
-            userRecord = auth.createUser(request);
-            logger.info("User created with Firebase");
+            userRecord = registerUser(user.name, user.email, user.password);
         } catch (FirebaseAuthException ex) {
             logger.error("Add failed", ex);
-            return new FunctionResponse(false, "Get failed with " + ex.getMessage());
+            return new FunctionResponse(false, "Add failed with " + ex.getMessage());
         }
-        // Add user info to firestore
+
+        // Create firestore data
         Map<String, Object> data = new HashMap<>();
-        data.put("name", dpName);
-        data.put("email", email);
-        data.put("role", "DP");
+        data.put("name", user.name);
+        data.put("email", user.email);
+        data.put("role", user.role);
         data.put("bucketName", bucketName);
 
         // Create attributes array
@@ -202,16 +328,91 @@ public class GCPFireBase {
         attributes.add(userRecord.getUid());
         data.put("attributes", attributes);
 
-        DocumentReference docRef = this.db.collection("users").document(userRecord.getUid());
-        ApiFuture<WriteResult> result = docRef.set(data);
+        ArrayList<String> dataRequesters = new ArrayList<>();
+        data.put("dataRequesters", dataRequesters);
+
+        // Add user info to firestore
         try {
-            String res = result.get().getUpdateTime().toString();
+            String res = addUser(data, userRecord.getUid()).getUpdateTime().toString();
             return new FunctionResponse(true, "Add successful at " + res);
         } catch (InterruptedException ex) {
-            logger.error("Adding user " + dpName + " failed", ex);
+            logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
         } catch (ExecutionException ex) {
-            logger.error("Adding user " + dpName + " failed", ex);
+            logger.error("Adding user " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Add failed " + ex.getMessage());
+        }
+    }
+
+    /***
+     * Adds a data requester to the system
+     * 
+     * @param user      DR object containing user info
+     * @param parentUid Firebase auth id of the parent
+     * @return
+     */
+    public FunctionResponse addDR(DR user, String parentUid) {
+        // Get parent info
+        User parent;
+        try {
+            parent = getUserObject(parentUid);
+            if (parent == null) {
+                return new FunctionResponse(false, "Parent not found");
+            }
+        } catch (InterruptedException ex) {
+            logger.error("Get parent failed", ex);
+            return new FunctionResponse(false, "Get parent failed with " + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Get failed", ex);
+            return new FunctionResponse(false, "Get parent failed with" + ex.getMessage());
+        }
+
+        // Make user with firebase
+        UserRecord userRecord;
+        try {
+            userRecord = registerUser(user.name, user.email, user.password);
+        } catch (FirebaseAuthException ex) {
+            logger.error("Add failed", ex);
+            return new FunctionResponse(false, "Add failed with " + ex.getMessage());
+        }
+
+        // Create firestore data
+        Map<String, Object> data = new HashMap<>();
+        data.put("name", user.name);
+        data.put("email", user.email);
+        data.put("role", user.role);
+        data.put("bucketName", parent.bucketName);
+        data.put("parent", parentUid);
+
+        // Create attributes array
+        ArrayList<String> attributes = new ArrayList<>();
+        attributes.add("DR");
+        attributes.add(userRecord.getUid());
+        data.put("attributes", attributes);
+
+        ArrayList<String> patients = new ArrayList<>();
+        data.put("patients", patients);
+
+        // Update parent with child info
+        try {
+            updateArray(parentUid, "dataRequesters", userRecord.getUid());
+        } catch (InterruptedException ex) {
+            logger.error("Updating parent information for  " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Updating parent information failed " + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Updating parent information for  " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Updating parent information failed " + ex.getMessage());
+        }
+
+        // Add user info to firestore
+        try {
+            String res = addUser(data, userRecord.getUid()).getUpdateTime().toString();
+            return new FunctionResponse(true, "Add successful at " + res);
+        } catch (InterruptedException ex) {
+            logger.error("Adding user " + user.name + " failed", ex);
+            return new FunctionResponse(false, "Add failed " + ex.getMessage());
+        } catch (ExecutionException ex) {
+            logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
         }
     }
