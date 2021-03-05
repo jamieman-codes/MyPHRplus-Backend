@@ -12,6 +12,7 @@ public class User {
     public String bucketName = "";
     public String password = "";
     public ArrayList<String> attributes;
+    public ArrayList<String> files;
 
     public String convertToJson() {
         return Json.createObjectBuilder().add("name", name).add("email", email).add("role", role).build().toString();

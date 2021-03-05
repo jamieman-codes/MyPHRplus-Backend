@@ -2,12 +2,17 @@ package com.jws1g18.myphrplus;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutionException;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.api.core.ApiFuture;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.CollectionReference;
@@ -134,7 +139,7 @@ public class GCPFireBase {
 
         // Create attributes array
         ArrayList<String> attributes = new ArrayList<>();
-        attributes.add("DR");
+        attributes.add("Patient");
         attributes.add(uid);
         data.put("attributes", attributes);
 
@@ -170,7 +175,7 @@ public class GCPFireBase {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    private User getUserObject(String uid) throws InterruptedException, ExecutionException {
+    User getUserObject(String uid) throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(uid);
         ApiFuture<DocumentSnapshot> future = docRef.get();
         DocumentSnapshot document = future.get();
@@ -180,7 +185,92 @@ public class GCPFireBase {
         } else {
             return null;
         }
+    }
 
+    /***
+     * Gets a patient from firestore, can only be used if you know user is patient
+     * @param uid Firebase auth id of the user
+     * @return Patient object
+     * @throws InterruptedException
+     * @throws ExecutionException
+     */
+    Patient getPatient(String uid) throws InterruptedException, ExecutionException {
+        DocumentReference docRef = this.db.collection("users").document(uid);
+        ApiFuture<DocumentSnapshot> future = docRef.get();
+        DocumentSnapshot document = future.get();
+        if (document.exists()) {
+            Patient user = document.toObject(Patient.class);
+            return user;
+        } else {
+            return null;
+        }
+    }
+
+    /***
+     * Gets the user IDs of everyone included in the Patients access policy
+     * @param accessPolicy List defining the basic access policy elements
+     * @param customAccessPolicy Custom access policy string
+     * @param uid User ID of the patient
+     * @param patient Patient object 
+     * @return ArrayList containing the user IDs
+     */
+    ArrayList<String> getUids(List<String> accessPolicy, String customAccessPolicy, String uid, Patient patient){
+        ArrayList<String> uids = new ArrayList<>();
+        for(String access: accessPolicy){
+            if(access.equals("patient")){
+                uids.add(uid);
+            } else if(access.equals("DR")){
+                uids.add(patient.parent);
+            } else if(access.equals("DP")){
+                uids.add(getParent(patient.parent));
+            } else if(access.equals("custom")){
+                List<String> customPolicyList = Arrays.asList(customAccessPolicy.split(","));
+                QuerySnapshot query;
+                // Get every user within the same bucket as user
+                try{
+                    query = queryUsers("bucketName", patient.bucketName);
+                } catch(InterruptedException ex){
+                    break;
+                } catch(ExecutionException ex){
+                    break;
+                }
+                // Check if the returned documents contain every attribute specifed
+                for(QueryDocumentSnapshot doc: query.getDocuments()){
+                    List<String> attrs = (List<String>) doc.get("attributes");
+                    if(attrs.containsAll(customPolicyList)){
+                        uids.add(doc.getId());
+                    }
+                }
+            }
+        }
+        return uids;
+    }
+    
+    public String addFile(Map<String, Object> file) throws InterruptedException, ExecutionException{
+        ApiFuture<DocumentReference> future = this.db.collection("files").add(file);
+        return future.get().getId();
+    }
+
+    /***
+     * Returns the parent of a user, if one exists
+     * @param uid Firebase auth ID of the user
+     * @return Null if no parent found, parent uid if found
+     */
+    String getParent(String uid){
+        DocumentReference docRef = this.db.collection("users").document(uid);
+        ApiFuture<DocumentSnapshot> future = docRef.get();
+        DocumentSnapshot document;
+        try{
+            document = future.get();
+        } catch (InterruptedException ex){
+            return null;
+        } catch (ExecutionException ex){
+            return null;
+        }
+        if(document.exists()){
+            return document.getString("parent");
+        }
+        return null;
     }
 
     /***
@@ -238,6 +328,12 @@ public class GCPFireBase {
             throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(userID);
         ApiFuture<WriteResult> future = docRef.update(array, FieldValue.arrayUnion(value));
+        return future.get();
+    }
+
+    public WriteResult updateField(String collection, String document, String field, String value) throws InterruptedException, ExecutionException{
+        DocumentReference docRef = this.db.collection(collection).document(document);
+        ApiFuture<WriteResult> future = docRef.update(field, value);
         return future.get();
     }
 
@@ -363,7 +459,7 @@ public class GCPFireBase {
             logger.error("Get parent failed", ex);
             return new FunctionResponse(false, "Get parent failed with " + ex.getMessage());
         } catch (ExecutionException ex) {
-            logger.error("Get failed", ex);
+            logger.error("Get parent failed", ex);
             return new FunctionResponse(false, "Get parent failed with" + ex.getMessage());
         }
 
@@ -414,6 +510,74 @@ public class GCPFireBase {
         } catch (ExecutionException ex) {
             logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
+        }
+    }
+
+    public FunctionResponse getFiles(String uid){
+        // Get user object
+        User user;
+        try{
+            user = getUserObject(uid);
+        } catch (InterruptedException ex){
+            return new FunctionResponse(false, "Getting user object failed");
+        } catch (ExecutionException ex){
+            return new FunctionResponse(false, "Getting user object failed");
+        }
+        // Get file references
+        ArrayList<String> files = user.files;
+        
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+
+        // Get file data
+        for(String fileRef :files){
+            DocumentReference docRef = this.db.collection("files").document(fileRef);
+            ApiFuture<DocumentSnapshot> future = docRef.get();
+            DocumentSnapshot document;
+            try{
+                document = future.get();
+                if (document.exists()) {
+                    ObjectNode fileNode = mapper.createObjectNode();
+                    fileNode.put("fileName", document.getString("fileName"));
+                    String type = document.getString("type").split("/")[0];
+                    fileNode.put("fileType", type);
+                    fileNode.put("opened", document.getBoolean("opened"));
+                    fileNode.put("ref", fileRef);
+                    arrayNode.addAll(Arrays.asList(fileNode));
+                } 
+            } catch (InterruptedException ex){
+                logger.error("Could get file "  + fileRef, ex);
+                
+            } catch (ExecutionException ex){
+                logger.error("Could get file "  + fileRef, ex);
+            }
+        }
+
+        try{
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException ex){
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    public FunctionResponse getFilePath(String fileRef){
+        DocumentReference docRef = this.db.collection("files").document(fileRef);
+        ApiFuture<DocumentSnapshot> future = docRef.get();
+        DocumentSnapshot document;
+        try{
+            document = future.get();
+            if (document.exists()) {
+                String res = document.getString("filepath") + "," + document.getString("type");
+                return new FunctionResponse(true, res);
+            }
+            return new FunctionResponse(false, "Couldn't find file");
+        } catch (InterruptedException ex){
+            logger.error("Could get file "  + fileRef, ex);
+            return new FunctionResponse(false, "Couldn't find file");
+        } catch (ExecutionException ex){
+            logger.error("Could get file "  + fileRef, ex);
+            return new FunctionResponse(false, "Couldn't find file");
+            
         }
     }
 }
