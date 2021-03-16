@@ -431,13 +431,10 @@ public class GCPFireBase {
         try {
             String res = addUser(data, userRecord.getUid()).getUpdateTime().toString();
             return new FunctionResponse(true, "Add successful at " + res);
-        } catch (InterruptedException ex) {
+        } catch (InterruptedException | ExecutionException ex) {
             logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
-        } catch (ExecutionException ex) {
-            logger.error("Adding user " + user.name + " failed", ex);
-            return new FunctionResponse(false, "Add failed " + ex.getMessage());
-        }
+        } 
     }
 
     /***
@@ -455,12 +452,9 @@ public class GCPFireBase {
             if (parent == null) {
                 return new FunctionResponse(false, "Parent not found");
             }
-        } catch (InterruptedException ex) {
+        } catch (InterruptedException |ExecutionException ex) {
             logger.error("Get parent failed", ex);
             return new FunctionResponse(false, "Get parent failed with " + ex.getMessage());
-        } catch (ExecutionException ex) {
-            logger.error("Get parent failed", ex);
-            return new FunctionResponse(false, "Get parent failed with" + ex.getMessage());
         }
 
         // Make user with firebase
@@ -492,10 +486,7 @@ public class GCPFireBase {
         // Update parent with child info
         try {
             updateArray(parentUid, "dataRequesters", userRecord.getUid());
-        } catch (InterruptedException ex) {
-            logger.error("Updating parent information for  " + user.name + " failed", ex);
-            return new FunctionResponse(false, "Updating parent information failed " + ex.getMessage());
-        } catch (ExecutionException ex) {
+        } catch (InterruptedException | ExecutionException ex) {
             logger.error("Updating parent information for  " + user.name + " failed", ex);
             return new FunctionResponse(false, "Updating parent information failed " + ex.getMessage());
         }
@@ -504,10 +495,7 @@ public class GCPFireBase {
         try {
             String res = addUser(data, userRecord.getUid()).getUpdateTime().toString();
             return new FunctionResponse(true, "Add successful at " + res);
-        } catch (InterruptedException ex) {
-            logger.error("Adding user " + user.name + " failed", ex);
-            return new FunctionResponse(false, "Add failed " + ex.getMessage());
-        } catch (ExecutionException ex) {
+        } catch (InterruptedException | ExecutionException ex) {
             logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
         }
@@ -518,9 +506,7 @@ public class GCPFireBase {
         User user;
         try{
             user = getUserObject(uid);
-        } catch (InterruptedException ex){
-            return new FunctionResponse(false, "Getting user object failed");
-        } catch (ExecutionException ex){
+        } catch (InterruptedException | ExecutionException ex){
             return new FunctionResponse(false, "Getting user object failed");
         }
         // Get file references
@@ -545,11 +531,8 @@ public class GCPFireBase {
                     fileNode.put("ref", fileRef);
                     arrayNode.addAll(Arrays.asList(fileNode));
                 } 
-            } catch (InterruptedException ex){
-                logger.error("Could get file "  + fileRef, ex);
-                
-            } catch (ExecutionException ex){
-                logger.error("Could get file "  + fileRef, ex);
+            } catch (InterruptedException | ExecutionException ex){
+                logger.error("Could get file "  + fileRef, ex);   
             }
         }
 
@@ -571,13 +554,9 @@ public class GCPFireBase {
                 return new FunctionResponse(true, res);
             }
             return new FunctionResponse(false, "Couldn't find file");
-        } catch (InterruptedException ex){
+        } catch (InterruptedException | ExecutionException ex){
             logger.error("Could get file "  + fileRef, ex);
             return new FunctionResponse(false, "Couldn't find file");
-        } catch (ExecutionException ex){
-            logger.error("Could get file "  + fileRef, ex);
-            return new FunctionResponse(false, "Couldn't find file");
-            
         }
     }
 }

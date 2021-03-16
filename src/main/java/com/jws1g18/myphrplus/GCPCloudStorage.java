@@ -21,6 +21,7 @@ public class GCPCloudStorage {
     Storage storage;
     String projectID = "myphrplus-backend";
     Logger logger;
+    ABE abeController = new ABE();
 
     public GCPCloudStorage(Logger logger) {
         this.storage = StorageOptions.getDefaultInstance().getService();
@@ -50,25 +51,21 @@ public class GCPCloudStorage {
     }
 
     /**
-     * Uploads an object to google cloud storage
+     * Uploads an a Multi Part File to google cloud storage
      * 
      * @param bucketName
      * @param objectName ID of the GCP object
      * @param filePath   path to file on the system
      */
-    public FunctionResponse uploadObject(String bucketName, String objectName, MultipartFile file, String type) {
+    public FunctionResponse uploadFile(String bucketName, String objectName, byte[] file, String type) {
         Map<String, String> metadata = new HashMap<>();
         metadata.put("Content-Type", type);
 
         BlobId blobId = BlobId.of(bucketName, objectName);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setMetadata(metadata).build();
 
-        try {
-            this.storage.create(blobInfo, file.getBytes());
-            return new FunctionResponse(true, "Upload successful");
-        } catch (IOException ex) {
-            return new FunctionResponse(false, "Upload failed");
-        }
+        this.storage.create(blobInfo, file);
+        return new FunctionResponse(true, "Upload successful");
     }
 
     public ByteArrayResource downloadObject(String bucketName, String objectName) {
