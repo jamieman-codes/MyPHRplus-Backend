@@ -19,6 +19,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
     // Local
     private static final String corsLocal = "http://192.168.0.27:8080";
+    private static final String corsLocal2 = "http://192.168.0.28:8080";
+    private static final String corsLocal3 = "http://192.168.0.26:8080";
 
     @Override
     protected void configure(HttpSecurity security) throws Exception {
@@ -28,7 +30,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(corsGAE, corsLocal));
+        configuration.setAllowedOrigins(Arrays.asList(corsGAE, corsLocal, corsLocal2, corsLocal3));
         configuration.setAllowedMethods(Arrays.asList("POST", "GET"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

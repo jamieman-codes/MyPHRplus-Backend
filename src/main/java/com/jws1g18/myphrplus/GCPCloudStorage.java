@@ -1,10 +1,8 @@
 package com.jws1g18.myphrplus;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Bucket;
@@ -15,7 +13,6 @@ import com.google.cloud.storage.StorageOptions;
 
 import org.slf4j.Logger;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.web.multipart.MultipartFile;
 
 public class GCPCloudStorage {
     Storage storage;

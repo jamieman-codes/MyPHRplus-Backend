@@ -106,7 +106,7 @@ public class GCPFireBase {
      * @param user Patient object containing user info
      * @return Function Response containing a success value and a message
      */
-    public FunctionResponse addPatient(String uid, Patient user) {
+    public FunctionResponse addPatient(String uid, Patient user, ArrayList<String> attributes) {
         // Randomly select hospital and doctor for patient.
         QuerySnapshot query;
         try {
@@ -136,11 +136,6 @@ public class GCPFireBase {
         data.put("nhsnum", user.nhsnum);
         data.put("bucketName", dp.bucketName);
         data.put("parent", dr);
-
-        // Create attributes array
-        ArrayList<String> attributes = new ArrayList<>();
-        attributes.add("Patient");
-        attributes.add(uid);
         data.put("attributes", attributes);
 
         // Update parent with child info
@@ -156,8 +151,8 @@ public class GCPFireBase {
 
         // Add to firestore
         try {
-            String res = addUser(data, uid).getUpdateTime().toString();
-            return new FunctionResponse(true, "Add successful at " + res);
+            addUser(data, uid);
+            return new FunctionResponse(true, dp.bucketName);
         } catch (InterruptedException ex) {
             logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
@@ -387,7 +382,7 @@ public class GCPFireBase {
      * @return A user record object that can be used to obtain the uid
      * @throws FirebaseAuthException
      */
-    private UserRecord registerUser(String username, String email, String password) throws FirebaseAuthException {
+    UserRecord registerUser(String username, String email, String password) throws FirebaseAuthException {
         // Create User with firebase auth
         CreateRequest request = new CreateRequest().setDisplayName(username).setEmail(email).setPassword(password);
         UserRecord userRecord = auth.createUser(request);
@@ -402,26 +397,13 @@ public class GCPFireBase {
      * @param bucketName Bucketname of created bucket
      * @return
      */
-    public FunctionResponse addDP(DP user, String bucketName) {
-        UserRecord userRecord;
-        try {
-            userRecord = registerUser(user.name, user.email, user.password);
-        } catch (FirebaseAuthException ex) {
-            logger.error("Add failed", ex);
-            return new FunctionResponse(false, "Add failed with " + ex.getMessage());
-        }
-
+    public FunctionResponse addDP(DP user, String bucketName, ArrayList<String> attributes, UserRecord userRecord) {
         // Create firestore data
         Map<String, Object> data = new HashMap<>();
         data.put("name", user.name);
         data.put("email", user.email);
         data.put("role", user.role);
         data.put("bucketName", bucketName);
-
-        // Create attributes array
-        ArrayList<String> attributes = new ArrayList<>();
-        attributes.add("DP");
-        attributes.add(userRecord.getUid());
         data.put("attributes", attributes);
 
         ArrayList<String> dataRequesters = new ArrayList<>();
@@ -444,7 +426,7 @@ public class GCPFireBase {
      * @param parentUid Firebase auth id of the parent
      * @return
      */
-    public FunctionResponse addDR(DR user, String parentUid) {
+    public FunctionResponse addDR(DR user, String parentUid, ArrayList<String> attributes, UserRecord userRecord) {
         // Get parent info
         User parent;
         try {
@@ -457,15 +439,6 @@ public class GCPFireBase {
             return new FunctionResponse(false, "Get parent failed with " + ex.getMessage());
         }
 
-        // Make user with firebase
-        UserRecord userRecord;
-        try {
-            userRecord = registerUser(user.name, user.email, user.password);
-        } catch (FirebaseAuthException ex) {
-            logger.error("Add failed", ex);
-            return new FunctionResponse(false, "Add failed with " + ex.getMessage());
-        }
-
         // Create firestore data
         Map<String, Object> data = new HashMap<>();
         data.put("name", user.name);
@@ -473,11 +446,6 @@ public class GCPFireBase {
         data.put("role", user.role);
         data.put("bucketName", parent.bucketName);
         data.put("parent", parentUid);
-
-        // Create attributes array
-        ArrayList<String> attributes = new ArrayList<>();
-        attributes.add("DR");
-        attributes.add(userRecord.getUid());
         data.put("attributes", attributes);
 
         ArrayList<String> patients = new ArrayList<>();
@@ -493,8 +461,8 @@ public class GCPFireBase {
 
         // Add user info to firestore
         try {
-            String res = addUser(data, userRecord.getUid()).getUpdateTime().toString();
-            return new FunctionResponse(true, "Add successful at " + res);
+            addUser(data, userRecord.getUid());
+            return new FunctionResponse(true, parent.bucketName);
         } catch (InterruptedException | ExecutionException ex) {
             logger.error("Adding user " + user.name + " failed", ex);
             return new FunctionResponse(false, "Add failed " + ex.getMessage());
