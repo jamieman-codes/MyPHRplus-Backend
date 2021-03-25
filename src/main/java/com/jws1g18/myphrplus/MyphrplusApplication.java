@@ -63,6 +63,12 @@ public class MyphrplusApplication {
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
+		// Check NHS Num
+		if(!fireBase.checkNHSnum(patient.nhsnum)){
+			return new ResponseEntity<>("NHS Number has already been registered", HttpStatus.BAD_REQUEST);
+		}
+
+
 		// Create Attribute array
 		ArrayList<String> attributes = new ArrayList<>();
 		attributes.add("uid_" + authResponse.getMessage());
@@ -172,7 +178,12 @@ public class MyphrplusApplication {
 			}
 			if(accessPolicy.size() == 0 && custom){
 				long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
-				policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count;
+				if(count == 1){
+					policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2";
+				}
+				else{
+					policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count;
+				}
 			}
 			else if(accessPolicy.size() == 1 && !custom){
 				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
@@ -182,6 +193,21 @@ public class MyphrplusApplication {
 				}
 				policy += "notObtainable 1of2";
 			}
+			else if(accessPolicy.size() == 1 && custom){
+				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
+						authResponse.getMessage(), user);
+				for (String uid : policyUids) {
+					policy += "uid_" + uid + " ";
+				}
+				policy += "notObtainable 1of2 ";
+				long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
+				if(count == 1){
+					policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2 1of2";
+				}
+				else{
+					policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
+				}
+			}
 			else{
 				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
 						authResponse.getMessage(), user);
@@ -190,10 +216,15 @@ public class MyphrplusApplication {
 					x++;
 					policy += "uid_" + uid + " ";
 				}
-				policy += "1of" + x;
+				policy += "1of" + x + " ";
 				if (custom) {
 					long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
-					policy += " " + customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
+					if(count == 1){
+						policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2 1of2";
+					}
+					else{
+						policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
+					}
 				}
 			}
 
@@ -209,6 +240,7 @@ public class MyphrplusApplication {
 			try {
 				encFile = ABE.encrypt(pub, policy, file.getBytes());
 			} catch (Exception e) {
+				logger.error("Could not encrypt file", e);
 				return new ResponseEntity<>("Could not encrypt file", HttpStatus.BAD_REQUEST);
 			}
 
@@ -502,6 +534,74 @@ public class MyphrplusApplication {
 			}
 			else{
 				return new ResponseEntity<>(fileResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value="/getPatientAttributes", method=RequestMethod.GET)
+	public ResponseEntity<?> getPatientAttributes(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum) {
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		// Check user is DR
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse attrResponse = fireBase.getPatientAttributes(nhsNum);
+			if(attrResponse.successful()){
+				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.OK);
+			}else{
+				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value="/addAttribute", method=RequestMethod.POST)
+	public ResponseEntity<?> addAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		// Check user is DR
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse addResponse = fireBase.updateAttributes(nhsNum, attribute);
+			if(addResponse.successful()){
+				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
+			}
+			else{
+				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value="/removeAttribute", method=RequestMethod.POST)
+	public ResponseEntity<?> removeAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		// Check user is DR
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse removeResponse = fireBase.removeAttribute(nhsNum, attribute);
+			if(removeResponse.successful()){
+				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.OK);
+			}
+			else{
+				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
 		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);

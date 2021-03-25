@@ -600,4 +600,103 @@ public class GCPFireBase {
 
         return filesToJSON(files);
     }
+
+    public boolean checkNHSnum(String nhsNum){
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("nhsnum", nhsNum);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("User query failed ", e);
+            return true;
+        }
+        return snapshot.isEmpty();
+    }
+
+    public FunctionResponse getPatientAttributes(String nhsNum){
+        // Lookup patient from NHS num
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("nhsnum", nhsNum);
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Could not get from FireStore");
+        }
+        //Get patient files
+        ArrayList<String> attributes = null;
+        int x = 0;
+        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+            attributes = (ArrayList<String>) doc.get("attributes");
+            x++;
+        }
+        if(x>1 || attributes == null){
+            return new FunctionResponse(false, "Failed to get patient attributes");
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+
+        x = 0;
+        //Convert to JSON, ignore first 2 attributes as they are permanent 
+        for(String attr: attributes){
+            if(x>1){
+                ObjectNode attrNode = arrayNode.addObject();
+                attrNode.put("attribute", attr);
+            }
+            x++;
+        }
+        try {
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    public FunctionResponse updateAttributes(String nhsNum, String attr){
+        // Lookup patient from NHS num
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("nhsnum", nhsNum);
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Could not get from FireStore");
+        }
+        String uid = null;
+        int x = 0;
+        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+            uid = doc.getId();
+            x++;
+        }
+        if(x>1 || uid == null){
+            return new FunctionResponse(false, "Failed to get patient");
+        }
+        try {
+            updateArray(uid, "attributes", attr);
+            return new FunctionResponse(true, "Add successful");
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Couldn't add attribute");
+        }
+    }
+
+    public FunctionResponse removeAttribute(String nhsNum, String attr){
+         // Lookup patient from NHS num
+         QuerySnapshot snapshot;
+         try {
+             snapshot = queryUsers("nhsnum", nhsNum);
+         } catch (InterruptedException | ExecutionException e) {
+             return new FunctionResponse(false, "Could not get from FireStore");
+         }
+         String uid = null;
+         int x = 0;
+         for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+             uid = doc.getId();
+             x++;
+         }
+         if(x>1 || uid == null){
+             return new FunctionResponse(false, "Failed to get patient");
+         }
+        DocumentReference docRef = this.db.collection("users").document(uid);
+        try {
+            WriteResult future = docRef.update("attributes", FieldValue.arrayRemove(attr)).get();
+            return new FunctionResponse(true, "Attribute removed");
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Couldn't remove attribute");
+        }
+    }
 }

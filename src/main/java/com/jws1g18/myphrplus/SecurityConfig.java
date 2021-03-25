@@ -18,7 +18,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     private static final String corsGAE = "https://myphrplus-frontend.nw.r.appspot.com";
 
     // Local
-    private static final String corsLocal = "http://192.168.0.14:8080";
+    private static final String corsLocal = "http://localhost:8080";
 
     @Override
     protected void configure(HttpSecurity security) throws Exception {
