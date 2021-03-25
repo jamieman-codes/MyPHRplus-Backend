@@ -11,6 +11,7 @@ public class User {
     public String role;
     public String bucketName = "";
     public String password = "";
+    public String parent = "";
     public ArrayList<String> attributes;
     public ArrayList<String> files;
 

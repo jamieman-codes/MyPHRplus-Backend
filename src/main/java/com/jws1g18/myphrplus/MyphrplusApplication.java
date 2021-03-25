@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutionException;
 import com.google.api.Http;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
+import com.google.rpc.context.AttributeContext.Response;
 import com.jws1g18.myphrplus.DTOS.DP;
 import com.jws1g18.myphrplus.DTOS.DR;
 import com.jws1g18.myphrplus.DTOS.Patient;
@@ -145,6 +146,7 @@ public class MyphrplusApplication {
 		// Check user role
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
+
 			// Get Patient object
 			Patient user;
 			try {
@@ -164,22 +166,35 @@ public class MyphrplusApplication {
 			// Parse access policy
 			String policy = "";
 			Boolean custom = false;
-			List<String> accessPolicyCopy = accessPolicy;
-			if (accessPolicyCopy.contains("custom")) {
-				accessPolicyCopy.remove("custom");
+			if (accessPolicy.contains("custom")) {
+				accessPolicy.remove("custom");
 				custom = true;
 			}
-			ArrayList<String> policyUids = fireBase.getUids(accessPolicyCopy, customAccessPolicy,
-					authResponse.getMessage(), user);
-			int x = 0;
-			for (String uid : policyUids) {
-				x++;
-				policy += "uid_" + uid + " ";
-			}
-			policy += "1of" + x;
-			if (custom) {
+			if(accessPolicy.size() == 0 && custom){
 				long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
-				policy += " " + customAccessPolicy.replace(",", " ") + " 1of" + count + " 1of2";
+				policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count;
+			}
+			else if(accessPolicy.size() == 1 && !custom){
+				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
+						authResponse.getMessage(), user);
+				for (String uid : policyUids) {
+					policy += "uid_" + uid + " ";
+				}
+				policy += "notObtainable 1of2";
+			}
+			else{
+				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
+						authResponse.getMessage(), user);
+				int x = 0;
+				for (String uid : policyUids) {
+					x++;
+					policy += "uid_" + uid + " ";
+				}
+				policy += "1of" + x;
+				if (custom) {
+					long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
+					policy += " " + customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
+				}
 			}
 
 			// Encrypt File
@@ -219,6 +234,10 @@ public class MyphrplusApplication {
 			} catch (InterruptedException | ExecutionException ex) {
 				logger.error("Adding file reference to firestore failed", ex);
 				return new ResponseEntity<>("Adding file reference to firestore failed", HttpStatus.BAD_REQUEST);
+			}
+
+			if(custom){
+				accessPolicy.add("custom");
 			}
 
 			// Add refrence to users
@@ -443,5 +462,51 @@ public class MyphrplusApplication {
 
 		return ResponseEntity.ok().contentLength(resFile.contentLength())
 				.contentType(MediaType.parseMediaType(fileType)).body(resFile);
+	}
+
+	@RequestMapping(value="/getAllDPs", method=RequestMethod.GET)
+	public ResponseEntity<?> getAllDPs() {
+		FunctionResponse dpResponse = fireBase.getAllDPs();
+		if(dpResponse.successful()){
+			return new ResponseEntity<>(dpResponse.getMessage(), HttpStatus.OK);
+		}
+		return new ResponseEntity<>(dpResponse.getMessage(), HttpStatus.BAD_REQUEST);
+	}
+	
+	@RequestMapping(value="/getPatients", method=RequestMethod.GET)
+	public ResponseEntity<?> getPatients(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		FunctionResponse pResponse = fireBase.getAllPatients();
+		if(pResponse.successful()){
+			return new ResponseEntity<>(pResponse.getMessage(), HttpStatus.OK);
+		}
+		return new ResponseEntity<>(pResponse.getMessage(), HttpStatus.BAD_REQUEST);
+	}
+
+	@RequestMapping(value="/getPatientFiles", method=RequestMethod.GET)
+	public ResponseEntity<?> getPatientFiles(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		// Check user is DR
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			//Get patient files
+			FunctionResponse fileResponse = fireBase.getPatientFiles(nhsNum, authResponse.getMessage());
+			if(fileResponse.successful()){
+				return new ResponseEntity<>(fileResponse.getMessage(), HttpStatus.OK);
+			}
+			else{
+				return new ResponseEntity<>(fileResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
 	}
 }

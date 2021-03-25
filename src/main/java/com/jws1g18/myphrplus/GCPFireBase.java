@@ -107,24 +107,16 @@ public class GCPFireBase {
      * @return Function Response containing a success value and a message
      */
     public FunctionResponse addPatient(String uid, Patient user, ArrayList<String> attributes) {
-        // Randomly select hospital and doctor for patient.
-        QuerySnapshot query;
+        // Randomly doctor for patient.
+        DocumentReference docRef = this.db.collection("users").document(user.parent);
+        ApiFuture<DocumentSnapshot> future = docRef.get();
+        DocumentSnapshot document;
         try {
-            query = queryUsers("role", "DP");
-        } catch (InterruptedException ex) {
-            logger.error("Getting DP for " + user.name + " failed", ex);
-            return new FunctionResponse(false, "Getting DP failed" + ex.getMessage());
-        } catch (ExecutionException ex) {
-            logger.error("Getting DP for " + user.name + " failed", ex);
-            return new FunctionResponse(false, "Getting DP failed" + ex.getMessage());
+            document = future.get();
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Couldn't get DP");
         }
-        List<QueryDocumentSnapshot> dPdocs = query.getDocuments();
-        if (dPdocs.isEmpty()) {
-            logger.error("No DPs found");
-            return new FunctionResponse(false, "No DPs found in FireStore");
-        }
-        QueryDocumentSnapshot dPdoc = dPdocs.get(rand.nextInt(dPdocs.size())); // Get random DP
-        DP dp = dPdoc.toObject(DP.class);
+        DP dp = document.toObject(DP.class);
         ArrayList<String> drList = dp.dataRequesters;
         String dr = drList.get(rand.nextInt(drList.size())); // Get random DR
 
@@ -480,35 +472,7 @@ public class GCPFireBase {
         // Get file references
         ArrayList<String> files = user.files;
         
-        ObjectMapper mapper = new ObjectMapper();
-        ArrayNode arrayNode = mapper.createArrayNode();
-
-        // Get file data
-        for(String fileRef :files){
-            DocumentReference docRef = this.db.collection("files").document(fileRef);
-            ApiFuture<DocumentSnapshot> future = docRef.get();
-            DocumentSnapshot document;
-            try{
-                document = future.get();
-                if (document.exists()) {
-                    ObjectNode fileNode = mapper.createObjectNode();
-                    fileNode.put("fileName", document.getString("fileName"));
-                    String type = document.getString("type").split("/")[0];
-                    fileNode.put("fileType", type);
-                    fileNode.put("opened", document.getBoolean("opened"));
-                    fileNode.put("ref", fileRef);
-                    arrayNode.addAll(Arrays.asList(fileNode));
-                } 
-            } catch (InterruptedException | ExecutionException ex){
-                logger.error("Could get file "  + fileRef, ex);   
-            }
-        }
-
-        try{
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
-        } catch (JsonProcessingException ex){
-            return new FunctionResponse(false, "Couldn't process JSON");
-        }
+        return filesToJSON(files);
     }
 
     public FunctionResponse getFilePath(String fileRef){
@@ -526,5 +490,114 @@ public class GCPFireBase {
             logger.error("Could get file "  + fileRef, ex);
             return new FunctionResponse(false, "Couldn't find file");
         }
+    }
+
+    private FunctionResponse filesToJSON(ArrayList<String> files){
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+
+        // Get file data
+        for(String fileRef :files){
+            DocumentReference docRef = this.db.collection("files").document(fileRef);
+            ApiFuture<DocumentSnapshot> future = docRef.get();
+            DocumentSnapshot document;
+            try{
+                document = future.get();
+                if (document.exists()) {
+                    ObjectNode fileNode = arrayNode.addObject();
+                    fileNode.put("fileName", document.getString("fileName"));
+                    String type = document.getString("type").split("/")[0];
+                    fileNode.put("fileType", type);
+                    fileNode.put("ref", fileRef);
+                } 
+            } catch (InterruptedException | ExecutionException ex){
+                logger.error("Could get file "  + fileRef, ex);   
+            }
+        }
+        try{
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException ex){
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    public FunctionResponse getAllDPs(){
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+
+        // Get all DPs
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("role", "DP");
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Could not get from FireStore");
+        }
+        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+            ObjectNode dpNode = arrayNode.addObject();
+            dpNode.put("text", doc.getString("name"));
+            dpNode.put("value", doc.getId());
+        }
+        try {
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    public FunctionResponse getAllPatients(){
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+
+        // Get all DPs
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("role", "Patient");
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Could not get from FireStore");
+        }
+        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+            ObjectNode dpNode = arrayNode.addObject();
+            dpNode.put("name", doc.getString("name"));
+            dpNode.put("nhsNum", doc.getString("nhsnum"));
+        }
+        try {
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    public FunctionResponse getPatientFiles(String nhsNum, String uid){
+        // Lookup patient from NHS num
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("nhsnum", nhsNum);
+        } catch (InterruptedException | ExecutionException e) {
+            return new FunctionResponse(false, "Could not get from FireStore");
+        }
+        //Get patient files
+        ArrayList<String> files = null;
+        int x = 0;
+        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+            files = (ArrayList<String>) doc.get("files");
+            x++;
+        }
+        if(x>1 || files == null){
+            return new FunctionResponse(false, "Failed to get patient files");
+        }
+        // Get requesters files
+        User drObject;
+        try{
+            drObject = getUserObject(uid);
+        }
+        catch(InterruptedException | ExecutionException ex){
+            logger.error("Getting DR object failed", ex);
+            return new FunctionResponse(false, "Couldn't get DR object");
+        }
+        ArrayList<String> drFiles = drObject.files;
+        //files now contains only the elements which are also contained in drFiles.
+        files.retainAll(drFiles);
+
+        return filesToJSON(files);
     }
 }
