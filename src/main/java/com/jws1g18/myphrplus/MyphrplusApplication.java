@@ -42,9 +42,9 @@ import co.junwei.bswabe.SerializeUtils;
 public class MyphrplusApplication {
 	Logger logger = LoggerFactory.getLogger(MyphrplusApplication.class);
 
-	GCPFireBase fireBase = new GCPFireBase(logger);
-	GCPCloudStorage cloudStorage = new GCPCloudStorage(logger);
 	Helpers helper = new Helpers();
+	GCPFireBase fireBase = new GCPFireBase(logger, helper);
+	GCPCloudStorage cloudStorage = new GCPCloudStorage(logger);
 
 	public static void main(String[] args) {
 		SpringApplication.run(MyphrplusApplication.class);
@@ -475,7 +475,7 @@ public class MyphrplusApplication {
 		byte[] pubByte;
 		byte[] prvByte;
 		try {
-			pubByte = GCPSecretManager.getKeys(user.bucketName + "-public");
+			pubByte = GCPSecretManager.getKeys(bucketName + "-public");
 			prvByte = GCPSecretManager.getKeys(authResponse.getMessage());
 		} catch (IOException ex) {
 			return new ResponseEntity<>("Couldn't retrive keys", HttpStatus.BAD_REQUEST);
@@ -569,6 +569,9 @@ public class MyphrplusApplication {
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		if(attribute.equals("notObtainable")){
+			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
 		}
 		// Check user is DR
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());

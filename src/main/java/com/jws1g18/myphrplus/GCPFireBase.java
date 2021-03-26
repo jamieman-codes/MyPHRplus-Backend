@@ -45,8 +45,9 @@ public class GCPFireBase {
     FirebaseAuth auth;
     Logger logger;
     Random rand;
+    Helpers helper;
 
-    public GCPFireBase(Logger logger) {
+    public GCPFireBase(Logger logger, Helpers helper) {
         GoogleCredentials credentials;
         try {
             credentials = GoogleCredentials.getApplicationDefault();
@@ -63,6 +64,7 @@ public class GCPFireBase {
 
         this.logger = logger;
         this.rand = new Random();
+        this.helper = helper;
     }
 
     public Firestore getDB() {
@@ -620,7 +622,7 @@ public class GCPFireBase {
         } catch (InterruptedException | ExecutionException e) {
             return new FunctionResponse(false, "Could not get from FireStore");
         }
-        //Get patient files
+        //Get patient attributes
         ArrayList<String> attributes = null;
         int x = 0;
         for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
@@ -658,14 +660,28 @@ public class GCPFireBase {
             return new FunctionResponse(false, "Could not get from FireStore");
         }
         String uid = null;
+        String bucketName = null;
+        ArrayList<String> attributes = null;
         int x = 0;
         for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
             uid = doc.getId();
+            bucketName = doc.getString("bucketName");
+            attributes = (ArrayList<String>) doc.get("attributes");
             x++;
         }
         if(x>1 || uid == null){
             return new FunctionResponse(false, "Failed to get patient");
         }
+
+        // Generate & store new primary key
+        attributes.add(attr);
+        FunctionResponse keyRes = helper.genAndUpdatePrivKey(bucketName, attributes.toArray(new String[0]), uid);
+        if(!keyRes.successful()){
+            return new FunctionResponse(false, "Key could not be updated");
+        }
+        
+
+        //Add to firestore
         try {
             updateArray(uid, "attributes", attr);
             return new FunctionResponse(true, "Add successful");
@@ -683,20 +699,32 @@ public class GCPFireBase {
              return new FunctionResponse(false, "Could not get from FireStore");
          }
          String uid = null;
+         String bucketName = null;
+         ArrayList<String> attributes = null;
          int x = 0;
          for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
              uid = doc.getId();
+             bucketName = doc.getString("bucketName");
+             attributes = (ArrayList<String>) doc.get("attributes");
              x++;
          }
          if(x>1 || uid == null){
              return new FunctionResponse(false, "Failed to get patient");
-         }
+        }
+
+        // Generate & store new primary key
+        attributes.remove(attr);
+        FunctionResponse keyRes = helper.genAndUpdatePrivKey(bucketName, attributes.toArray(new String[0]), uid);
+        if(!keyRes.successful()){
+            return new FunctionResponse(false, "Key could not be updated");
+        }
+
         DocumentReference docRef = this.db.collection("users").document(uid);
         try {
-            WriteResult future = docRef.update("attributes", FieldValue.arrayRemove(attr)).get();
-            return new FunctionResponse(true, "Attribute removed");
+            docRef.update("attributes", FieldValue.arrayRemove(attr)).get();
+            return new FunctionResponse(true, "Removed attribute");
         } catch (InterruptedException | ExecutionException e) {
-            return new FunctionResponse(false, "Couldn't remove attribute");
+            return new FunctionResponse(false, "Couldn't remove attribute from firestore");
         }
     }
 }
