@@ -14,6 +14,9 @@ import co.junwei.bswabe.BswabePub;
 import co.junwei.bswabe.SerializeUtils;
 
 public class Helpers {
+    /**
+     * Just some helper functions
+     */
     private Tika tika = new Tika();
 
     private static final List<String> validExtensions = Arrays
@@ -21,6 +24,11 @@ public class Helpers {
     private static final List<String> validTypes = Arrays
             .asList(new String[] { "audio/mpeg", "image/jpeg", "image/png", "application/pdf" });
 
+    /**
+     * Detects a file type of a Multipartfile
+     * @param file
+     * @return
+     */
     public FunctionResponse detectFileType(MultipartFile file) {
         // Check extension
         String extension = FilenameUtils.getExtension(file.getOriginalFilename());
@@ -40,6 +48,13 @@ public class Helpers {
         return new FunctionResponse(false, "Invalid File Type");
     }
 
+    /**
+     * Generates and stores a private key
+     * @param bucketName Name of bucket that holds public key
+     * @param attributes string array of attributes
+     * @param uid user id 
+     * @return
+     */
     public FunctionResponse genAndStorePrivKeys(String bucketName, String[] attributes, String uid){
         BswabePrv prv;
         try{
@@ -57,6 +72,13 @@ public class Helpers {
 		}
     }
 
+    /**
+     * Generates and updates a private key
+     * @param bucketName Name of bucket that holds public key
+     * @param attributes string array of attributes
+     * @param uid user ID
+     * @return
+     */
     public FunctionResponse genAndUpdatePrivKey(String bucketName, String[] attributes, String uid){
         BswabePrv prv;
         try{
@@ -75,6 +97,14 @@ public class Helpers {
 		}
     }
 
+    /**
+     * Generates a private key
+     * @param bucketName Name of bucket that holds public key
+     * @param attributes string array of attributes
+     * @param uid
+     * @return 
+     * @throws IOException
+     */
     private BswabePrv genPrivKey(String bucketName, String[] attributes, String uid) throws IOException{
         //Get public and master Keys
         byte[] mskByte = GCPSecretManager.getKeys(bucketName + "-master");

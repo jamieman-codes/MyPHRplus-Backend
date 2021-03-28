@@ -116,6 +116,7 @@ public class GCPFireBase {
         try {
             document = future.get();
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't get DP when adding Patient", e);
             return new FunctionResponse(false, "Couldn't get DP");
         }
         DP dp = document.toObject(DP.class);
@@ -172,6 +173,7 @@ public class GCPFireBase {
             User user = document.toObject(User.class);
             return user;
         } else {
+            logger.error("Could not find user " + uid);
             return null;
         }
     }
@@ -191,6 +193,7 @@ public class GCPFireBase {
             Patient user = document.toObject(Patient.class);
             return user;
         } else {
+            logger.error("Could not find patient " + uid);
             return null;
         }
     }
@@ -251,9 +254,8 @@ public class GCPFireBase {
         DocumentSnapshot document;
         try{
             document = future.get();
-        } catch (InterruptedException ex){
-            return null;
-        } catch (ExecutionException ex){
+        } catch (InterruptedException | ExecutionException ex){
+            logger.error("Could not get parent", ex);
             return null;
         }
         if(document.exists()){
@@ -274,14 +276,12 @@ public class GCPFireBase {
             if (user != null) {
                 return new FunctionResponse(true, user.convertToJson());
             } else {
+                logger.error("User " + uid + " could not be found");
                 return new FunctionResponse(false, "User not found in database");
             }
-        } catch (InterruptedException ex) {
-            logger.error("Get failed", ex);
-            return new FunctionResponse(false, "Get failed with " + ex.getMessage());
-        } catch (ExecutionException ex) {
-            logger.error("Get failed", ex);
-            return new FunctionResponse(false, "Get failed with" + ex.getMessage());
+        } catch (InterruptedException | ExecutionException ex) {
+            logger.error("Get failed user failed", ex);
+            return new FunctionResponse(false, "Could not get user");
         }
     }
 
@@ -296,13 +296,10 @@ public class GCPFireBase {
         try {
             writeResult.get();
             return new FunctionResponse(true, "User Deleted");
-        } catch (InterruptedException ex) {
-            logger.error("Deletion failed", ex);
-            return new FunctionResponse(false, "Deletion failed with " + ex.getMessage());
-        } catch (ExecutionException ex) {
-            logger.error("Deletion failed", ex);
-            return new FunctionResponse(false, "Deletion failed with " + ex.getMessage());
-        }
+        } catch (InterruptedException | ExecutionException ex) {
+            logger.error("Deleting user "+ userID +" failed", ex);
+            return new FunctionResponse(false, "Failed to delete user");
+        } 
     }
 
     /**
@@ -320,6 +317,16 @@ public class GCPFireBase {
         return future.get();
     }
 
+    /**
+     * Updates a document field 
+     * @param collection 
+     * @param document
+     * @param field
+     * @param value
+     * @return Result of the write 
+     * @throws InterruptedException
+     * @throws ExecutionException
+     */
     public WriteResult updateField(String collection, String document, String field, String value) throws InterruptedException, ExecutionException{
         DocumentReference docRef = this.db.collection(collection).document(document);
         ApiFuture<WriteResult> future = docRef.update(field, value);
@@ -328,7 +335,6 @@ public class GCPFireBase {
 
     /***
      * Verifys if the user token sent with a request is a valid firebase token.
-     * 
      * @param uidToken Firebase id token
      * @return Boolean and message detailed if the action was successful
      */
@@ -338,7 +344,7 @@ public class GCPFireBase {
             return new FunctionResponse(true, decodedToken.getUid());
         } catch (FirebaseAuthException e) {
             logger.error("Authentication failed with error code: " + e.getErrorCode(), e);
-            return new FunctionResponse(false, "Failed with error code: " + e.getErrorCode());
+            return new FunctionResponse(false, "Could not authenticate user");
         }
     }
 
@@ -349,21 +355,12 @@ public class GCPFireBase {
      * @return Users role, or error message
      */
     public FunctionResponse getRole(String uid) {
-        DocumentReference docRef = db.collection("users").document(uid);
-        ApiFuture<DocumentSnapshot> future = docRef.get();
         try {
-            DocumentSnapshot document = future.get();
-            if (document.exists()) {
-                User user = document.toObject(User.class);
-                return new FunctionResponse(true, user.role);
-            }
-            return new FunctionResponse(false, "User not found");
-        } catch (InterruptedException ex) {
-            logger.error("Get failed", ex);
-            return new FunctionResponse(false, "Get failed with " + ex.getMessage());
-        } catch (ExecutionException ex) {
-            logger.error("Get failed", ex);
-            return new FunctionResponse(false, "Get failed with " + ex.getMessage());
+            DocumentSnapshot docRef = db.collection("users").document(uid).get().get();
+            return new FunctionResponse(true, docRef.getString("role")); 
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user:" + uid + " role", e);
+            return new FunctionResponse(false, "Could not get user role");
         }
     }
 
@@ -386,7 +383,6 @@ public class GCPFireBase {
 
     /***
      * Adds a data provider to the system
-     * 
      * @param user       DP object containing user info
      * @param bucketName Bucketname of created bucket
      * @return
@@ -463,12 +459,18 @@ public class GCPFireBase {
         }
     }
 
+    /**
+     * Gets a list of a users files and returns them as a JSON
+     * @param uid 
+     * @return JSON array of the files
+     */
     public FunctionResponse getFiles(String uid){
         // Get user object
         User user;
         try{
             user = getUserObject(uid);
         } catch (InterruptedException | ExecutionException ex){
+            logger.error("Could not get user :" + uid, ex);
             return new FunctionResponse(false, "Getting user object failed");
         }
         // Get file references
@@ -477,6 +479,11 @@ public class GCPFireBase {
         return filesToJSON(files);
     }
 
+    /**
+     * Gets a file path from a file reference
+     * @param fileRef
+     * @return
+     */
     public FunctionResponse getFilePath(String fileRef){
         DocumentReference docRef = this.db.collection("files").document(fileRef);
         ApiFuture<DocumentSnapshot> future = docRef.get();
@@ -487,6 +494,7 @@ public class GCPFireBase {
                 String res = document.getString("filepath") + "," + document.getString("type");
                 return new FunctionResponse(true, res);
             }
+            logger.error("Couldn't find file: " + fileRef);
             return new FunctionResponse(false, "Couldn't find file");
         } catch (InterruptedException | ExecutionException ex){
             logger.error("Could get file "  + fileRef, ex);
@@ -494,6 +502,11 @@ public class GCPFireBase {
         }
     }
 
+    /**
+     * Converts an array list of file refs to a JSON of their file info
+     * @param files ArrayList of file references
+     * @return
+     */
     private FunctionResponse filesToJSON(ArrayList<String> files){
         ObjectMapper mapper = new ObjectMapper();
         ArrayNode arrayNode = mapper.createArrayNode();
@@ -513,16 +526,22 @@ public class GCPFireBase {
                     fileNode.put("ref", fileRef);
                 } 
             } catch (InterruptedException | ExecutionException ex){
-                logger.error("Could get file "  + fileRef, ex);   
+                logger.error("Couldn't get file "  + fileRef, ex);   
+                return new FunctionResponse(false, "Couldn't get file");
             }
         }
         try{
             return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
         } catch (JsonProcessingException ex){
+            logger.error("JSON could not be proccessed", ex);
             return new FunctionResponse(false, "Couldn't process JSON");
         }
     }
 
+    /***
+     * Returns a JSON array of all data providers, for use on registration 
+     * @return
+     */
     public FunctionResponse getAllDPs(){
         ObjectMapper mapper = new ObjectMapper();
         ArrayNode arrayNode = mapper.createArrayNode();
@@ -532,6 +551,7 @@ public class GCPFireBase {
         try {
             snapshot = queryUsers("role", "DP");
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Error whilst querying database for DPs", e);
             return new FunctionResponse(false, "Could not get from FireStore");
         }
         for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
@@ -542,39 +562,61 @@ public class GCPFireBase {
         try {
             return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
+            logger.error("Could not proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
         }
     }
 
-    public FunctionResponse getAllPatients(){
+    /**
+     *  Gets a list of all patients for a Data Requester 
+     * @param uid ID of DR
+     * @return
+     */
+    public FunctionResponse getAllPatients(String uid){
         ObjectMapper mapper = new ObjectMapper();
         ArrayNode arrayNode = mapper.createArrayNode();
 
         // Get all DPs
-        QuerySnapshot snapshot;
+        ArrayList<String> patients;
         try {
-            snapshot = queryUsers("role", "Patient");
+            DocumentSnapshot ref = this.db.collection("users").document(uid).get().get();
+            patients = (ArrayList<String>) ref.get("patients");
         } catch (InterruptedException | ExecutionException e) {
-            return new FunctionResponse(false, "Could not get from FireStore");
+            logger.error("Could not get patients from FireStore", e);
+            return new FunctionResponse(false, "Could not get patients from FireStore");
         }
-        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
-            ObjectNode dpNode = arrayNode.addObject();
-            dpNode.put("name", doc.getString("name"));
-            dpNode.put("nhsNum", doc.getString("nhsnum"));
+        for(String patient: patients){
+            try{
+                DocumentSnapshot doc = this.db.collection("users").document(patient).get().get();
+                ObjectNode dpNode = arrayNode.addObject();
+                dpNode.put("name", doc.getString("name"));
+                dpNode.put("nhsNum", doc.getString("nhsnum"));
+            } catch (InterruptedException | ExecutionException e) {
+                logger.error("Could not get patient info", e);
+                return new FunctionResponse(false, "Could not get patient from FireStore");
+            }
         }
         try {
             return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
+            logger.error("Could not process JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
         }
     }
 
+    /**
+     * Gets a list of a patient files from an NHS num
+     * @param nhsNum 
+     * @param uid
+     * @return
+     */
     public FunctionResponse getPatientFiles(String nhsNum, String uid){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
         try {
             snapshot = queryUsers("nhsnum", nhsNum);
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not find user with NHS num " + nhsNum, e);
             return new FunctionResponse(false, "Could not get from FireStore");
         }
         //Get patient files
@@ -603,6 +645,11 @@ public class GCPFireBase {
         return filesToJSON(files);
     }
 
+    /**
+     * Checks if an NHS number has already been registered 
+     * @param nhsNum
+     * @return False if no other NHS nums are found
+     */
     public boolean checkNHSnum(String nhsNum){
         QuerySnapshot snapshot;
         try {
@@ -614,12 +661,18 @@ public class GCPFireBase {
         return snapshot.isEmpty();
     }
 
+    /**
+     * Gets a list of a patients attributes in JSON form from an NHS num
+     * @param nhsNum
+     * @return
+     */
     public FunctionResponse getPatientAttributes(String nhsNum){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
         try {
             snapshot = queryUsers("nhsnum", nhsNum);
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not find user with NHS num " + nhsNum, e);
             return new FunctionResponse(false, "Could not get from FireStore");
         }
         //Get patient attributes
@@ -636,21 +689,33 @@ public class GCPFireBase {
         ArrayNode arrayNode = mapper.createArrayNode();
 
         x = 0;
-        //Convert to JSON, ignore first 2 attributes as they are permanent 
+        //Convert to JSON, ignore first attributes as this is the uid, make first 2 shown non removeable
         for(String attr: attributes){
-            if(x>1){
+            if(x>0){
                 ObjectNode attrNode = arrayNode.addObject();
                 attrNode.put("attribute", attr);
+                if(x>2){
+                    attrNode.put("remove", false);
+                } else{
+                    attrNode.put("remove", true);
+                }
             }
             x++;
         }
         try {
             return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
+            logger.error("Couldn't proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
         }
     }
 
+    /**
+     * Adds a new attribute to a user and updates their private key 
+     * @param nhsNum
+     * @param attr
+     * @return
+     */
     public FunctionResponse updateAttributes(String nhsNum, String attr){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
@@ -677,6 +742,7 @@ public class GCPFireBase {
         attributes.add(attr);
         FunctionResponse keyRes = helper.genAndUpdatePrivKey(bucketName, attributes.toArray(new String[0]), uid);
         if(!keyRes.successful()){
+            logger.error(keyRes.getMessage());
             return new FunctionResponse(false, "Key could not be updated");
         }
         
@@ -686,10 +752,17 @@ public class GCPFireBase {
             updateArray(uid, "attributes", attr);
             return new FunctionResponse(true, "Add successful");
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't add attribute to firestore", e);
             return new FunctionResponse(false, "Couldn't add attribute");
         }
     }
 
+    /**
+     * Removes an attribute from a user and updates their private key
+     * @param nhsNum
+     * @param attr
+     * @return
+     */
     public FunctionResponse removeAttribute(String nhsNum, String attr){
          // Lookup patient from NHS num
          QuerySnapshot snapshot;
@@ -724,6 +797,7 @@ public class GCPFireBase {
             docRef.update("attributes", FieldValue.arrayRemove(attr)).get();
             return new FunctionResponse(true, "Removed attribute");
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't remove attribute from firestore", e);
             return new FunctionResponse(false, "Couldn't remove attribute from firestore");
         }
     }

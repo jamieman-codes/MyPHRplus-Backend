@@ -18,6 +18,13 @@ import com.google.protobuf.ByteString;
 public class GCPSecretManager {
     static final ProjectName projectName = ProjectName.of("myphrplus-backend");
 
+    /**
+     * Stores a key in the projects secret manager
+     * @param secretId ID of secret to be stored
+     * @param keys byte array of key
+     * @return true if successful 
+     * @throws IOException 
+     */
     public static boolean storeKey(String secretId, byte[] keys) throws IOException{
         try(SecretManagerServiceClient client = SecretManagerServiceClient.create()){
             Secret secret =
@@ -38,6 +45,12 @@ public class GCPSecretManager {
         }
     }
 
+    /**
+     * Gets a key from the projects secret manager
+     * @param secretId ID of key to get
+     * @return byte array of key
+     * @throws IOException
+     */
     public static byte[] getKeys(String secretId) throws IOException{
         try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
             SecretVersionName secretVersionName = SecretVersionName.of(projectName.getProject(), secretId, "latest");
@@ -48,6 +61,11 @@ public class GCPSecretManager {
         }
     }
 
+    /**
+     * Destroys a key, for use when a new private key is being made
+     * @param secretId ID of key to be destroyed
+     * @throws IOException
+     */
     public static void destroySecretVersion(String secretId) throws IOException{
         try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
             
@@ -55,15 +73,20 @@ public class GCPSecretManager {
             ListSecretVersionsPagedResponse pagedResponse = client.listSecretVersions(secretName);
 
             //Get lastest secret verison 
-            SecretVersion secretVersion = null;
             Iterator<SecretVersion> it = pagedResponse.iterateAll().iterator();
-            secretVersion = it.next();
+            SecretVersion secretVersion = it.next();
 
             client.destroySecretVersion(secretVersion.getName());
             client.close();
         }
     }
 
+    /**
+     * Adds a new version to a current secret
+     * @param secretId ID of secret to add new version too
+     * @param key byte array of key
+     * @throws IOException
+     */
     public static void addSecretVersion(String secretId, byte[] key) throws IOException{
         try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
             SecretName secretName = SecretName.of(projectName.getProject(), secretId);
