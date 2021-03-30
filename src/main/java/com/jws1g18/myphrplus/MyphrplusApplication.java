@@ -297,6 +297,44 @@ public class MyphrplusApplication {
 		return new ResponseEntity<>("File Upload Successful", HttpStatus.OK);
 	}
 
+	/**
+	 * Deletes a file either from a users fileRefs or if last user with file Ref then deletes whole file
+	 * @param uidToken firebase user ID token
+	 * @param fileRef File reference 
+	 * @return
+	 */
+	@RequestMapping(value = "/deleteFile", method = RequestMethod.POST)
+	public ResponseEntity<?> deleteFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam(name = "fileRef") String fileRef){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from user: " + authResponse.getMessage() + " to delete file: " + fileRef);
+		FunctionResponse deleteResponse = fireBase.deleteFile(authResponse.getMessage(), fileRef);
+		if(deleteResponse.successful()){
+			if(deleteResponse.getMessage().equals("No delete needed")){
+				logger.info("Request to delete file: " + fileRef + " successful");
+				return new ResponseEntity<>("Delete successfull", HttpStatus.OK);
+			}
+			else{
+				User user;
+				try {
+					user = fireBase.getUserObject(authResponse.getMessage());
+				} catch (InterruptedException | ExecutionException e) {
+					logger.error("Couldn't get user:"+ authResponse.getMessage() + " object", e);
+					return new ResponseEntity<>("Failed to get user object", HttpStatus.BAD_REQUEST);
+				}
+				Boolean delete = cloudStorage.deleteFile(user.bucketName, deleteResponse.getMessage());
+				if(delete){
+					logger.info("Request to delete file: " + fileRef + " successful, file deleted from cloud storage");
+					return new ResponseEntity<>("Delete successfull", HttpStatus.OK);
+				}
+				return new ResponseEntity<>("Delete unsuccessfull", HttpStatus.BAD_REQUEST);
+			}
+		} else {
+			return new ResponseEntity<>(deleteResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
 		
 	/**
 	 * Returns a users role

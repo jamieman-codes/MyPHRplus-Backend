@@ -65,8 +65,25 @@ public class GCPCloudStorage {
         return new FunctionResponse(true, "Upload successful");
     }
 
+    /**
+     * Downloads an object from cloud storage
+     * @param bucketName bucket to download from
+     * @param objectName file reference to download
+     * @return
+     */
     public ByteArrayResource downloadObject(String bucketName, String objectName) {
         BlobId blob = BlobId.of(bucketName, objectName);
         return new ByteArrayResource(storage.readAllBytes(blob));
+    }
+
+    /**
+     * Deletes a file from cloud storage
+     * @param bucketName Bucket to delete from
+     * @param objectName File location to delete
+     * @return
+     */
+    public boolean deleteFile(String bucketName, String objectName){
+        this.storage.delete(bucketName, objectName);
+        return true;
     }
 }

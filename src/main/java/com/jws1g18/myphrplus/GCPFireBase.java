@@ -778,4 +778,45 @@ public class GCPFireBase {
             return new FunctionResponse(false, "Couldn't remove attribute from firestore");
         }
     }
+
+    /**
+     * Deletes a fileRef from a users files, and if last user with fileRef then deletes whole file
+     * @param uid User ID of user to delete file from
+     * @param fileRef File reference to delete
+     * @return
+     */
+    public FunctionResponse deleteFile(String uid, String fileRef){
+        //Remove file ref from user
+        DocumentReference docRef = this.db.collection("users").document(uid);
+        try {
+            docRef.update("files", FieldValue.arrayRemove(fileRef)).get();
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't remove file from user", e);
+            return new FunctionResponse(false, "Couldn't remove file from firestore");
+        }
+
+        //Check if any others users still have file
+        Boolean delete = false;
+        try {
+            QuerySnapshot query = this.db.collection("users").whereArrayContains("files", fileRef).get().get();
+            if(query.isEmpty()){
+                delete = true;
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Check if other users still have file failed", e);
+            return new FunctionResponse(false, "Coulnd't perform nessasary checks");
+        }
+        if(delete){
+            DocumentReference fileDocRef = this.db.collection("files").document(fileRef);
+            try {
+                String fileLocation = fileDocRef.get().get().getString("filepath");
+                fileDocRef.delete().get();
+                return new FunctionResponse(true, fileLocation);
+            } catch (InterruptedException | ExecutionException e) {
+                logger.error("Couldn't delete file: " + fileRef + " from firestore", e);
+                return new FunctionResponse(false, "Couldn't delete file from firestore");
+            }
+        }
+        return new FunctionResponse(true, "No delete needed");
+    }
 }
