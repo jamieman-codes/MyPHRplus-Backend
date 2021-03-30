@@ -33,9 +33,6 @@ import com.google.firebase.auth.UserRecord;
 import com.google.firebase.auth.UserRecord.CreateRequest;
 import com.google.firebase.cloud.FirestoreClient;
 
-import com.jws1g18.myphrplus.DTOS.DP;
-import com.jws1g18.myphrplus.DTOS.DR;
-import com.jws1g18.myphrplus.DTOS.Patient;
 import com.jws1g18.myphrplus.DTOS.User;
 
 import org.slf4j.Logger;
@@ -95,7 +92,7 @@ public class GCPFireBase {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    private QuerySnapshot queryUsers(String field, String value) throws InterruptedException, ExecutionException {
+    QuerySnapshot queryUsers(String field, String value) throws InterruptedException, ExecutionException {
         CollectionReference user = this.db.collection("users");
         Query query = user.whereEqualTo(field, value);
         return query.get().get();
@@ -108,7 +105,7 @@ public class GCPFireBase {
      * @param user Patient object containing user info
      * @return Function Response containing a success value and a message
      */
-    public FunctionResponse addPatient(String uid, Patient user, ArrayList<String> attributes) {
+    public FunctionResponse addPatient(String uid, User user, ArrayList<String> attributes) {
         // Randomly doctor for patient.
         DocumentReference docRef = this.db.collection("users").document(user.parent);
         ApiFuture<DocumentSnapshot> future = docRef.get();
@@ -119,7 +116,7 @@ public class GCPFireBase {
             logger.error("Couldn't get DP when adding Patient", e);
             return new FunctionResponse(false, "Couldn't get DP");
         }
-        DP dp = document.toObject(DP.class);
+        User dp = document.toObject(User.class);
         ArrayList<String> drList = dp.dataRequesters;
         String dr = drList.get(rand.nextInt(drList.size())); // Get random DR
 
@@ -179,26 +176,6 @@ public class GCPFireBase {
     }
 
     /***
-     * Gets a patient from firestore, can only be used if you know user is patient
-     * @param uid Firebase auth id of the user
-     * @return Patient object
-     * @throws InterruptedException
-     * @throws ExecutionException
-     */
-    Patient getPatient(String uid) throws InterruptedException, ExecutionException {
-        DocumentReference docRef = this.db.collection("users").document(uid);
-        ApiFuture<DocumentSnapshot> future = docRef.get();
-        DocumentSnapshot document = future.get();
-        if (document.exists()) {
-            Patient user = document.toObject(Patient.class);
-            return user;
-        } else {
-            logger.error("Could not find patient " + uid);
-            return null;
-        }
-    }
-
-    /***
      * Gets the user IDs of everyone included in the Patients access policy
      * @param accessPolicy List defining the basic access policy elements
      * @param customAccessPolicy Custom access policy string
@@ -206,7 +183,7 @@ public class GCPFireBase {
      * @param patient Patient object 
      * @return ArrayList containing the user IDs
      */
-    ArrayList<String> getUids(List<String> accessPolicy, String customAccessPolicy, String uid, Patient patient){
+    ArrayList<String> getUids(List<String> accessPolicy, String customAccessPolicy, String uid, User patient){
         ArrayList<String> uids = new ArrayList<>();
         for(String access: accessPolicy){
             if(access.equals("patient")){
@@ -387,7 +364,7 @@ public class GCPFireBase {
      * @param bucketName Bucketname of created bucket
      * @return
      */
-    public FunctionResponse addDP(DP user, String bucketName, ArrayList<String> attributes, UserRecord userRecord) {
+    public FunctionResponse addDP(User user, String bucketName, ArrayList<String> attributes, UserRecord userRecord) {
         // Create firestore data
         Map<String, Object> data = new HashMap<>();
         data.put("name", user.name);
@@ -416,7 +393,7 @@ public class GCPFireBase {
      * @param parentUid Firebase auth id of the parent
      * @return
      */
-    public FunctionResponse addDR(DR user, String parentUid, ArrayList<String> attributes, UserRecord userRecord) {
+    public FunctionResponse addDR(User user, String parentUid, ArrayList<String> attributes, UserRecord userRecord) {
         // Get parent info
         User parent;
         try {

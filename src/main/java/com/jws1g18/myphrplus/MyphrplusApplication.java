@@ -7,11 +7,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
-import com.jws1g18.myphrplus.DTOS.DP;
-import com.jws1g18.myphrplus.DTOS.DR;
-import com.jws1g18.myphrplus.DTOS.Patient;
+import com.google.firestore.v1.Document;
 import com.jws1g18.myphrplus.DTOS.User;
 
 import org.slf4j.Logger;
@@ -55,7 +55,7 @@ public class MyphrplusApplication {
 	 * @return Returns HTTP response code and message
 	 */
 	@RequestMapping(method = RequestMethod.POST, path = "/registerPatient")
-	public ResponseEntity<?> registerPatient(@RequestBody Patient patient) {
+	public ResponseEntity<?> registerPatient(@RequestBody User patient) {
 		logger.info("Incoming request to register Patient: " + patient.email);
 		// Check authentication
 		FunctionResponse authResponse = fireBase.verifyUidToken(patient.uid);
@@ -148,7 +148,7 @@ public class MyphrplusApplication {
 	public ResponseEntity<?> uploadFilePatient(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
 			@RequestParam(name = "file") MultipartFile file, @RequestParam(name = "name") String name,
 			@RequestParam(name = "customAccessPolicy") String customAccessPolicy,
-			@RequestParam(name = "accessPolicy") List<String> accessPolicy) {
+			@RequestParam(name = "accessPolicy") ArrayList<String> accessPolicy) {
 		// Check auth token
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
@@ -159,140 +159,20 @@ public class MyphrplusApplication {
 		// Check user role
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
-
 			// Get Patient object
-			Patient user;
+			User user;
 			try {
-				user = fireBase.getPatient(authResponse.getMessage());
+				user = fireBase.getUserObject(authResponse.getMessage());
 			} catch (InterruptedException | ExecutionException ex) {
 				logger.error("Get patient failed", ex);
 				return new ResponseEntity<>("Get patient object failed", HttpStatus.BAD_REQUEST);
 			}
-			// Check file type + extension
-			FunctionResponse typeCheck = helper.detectFileType(file);
-			if (!typeCheck.successful()) {
-				return new ResponseEntity<>(typeCheck.getMessage(), HttpStatus.BAD_REQUEST);
-			}
-			String extension = typeCheck.getMessage().split(" ")[0];
-			String type = typeCheck.getMessage().split(" ")[1];
 
-			// Parse access policy
-			String policy = "";
-			Boolean custom = false;
-			if (accessPolicy.contains("custom")) {
-				accessPolicy.remove("custom");
-				custom = true;
-			}
-			if(accessPolicy.size() == 0 && custom){
-				long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
-				if(count == 1){
-					policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2";
-				}
-				else{
-					policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count;
-				}
-			}
-			else if(accessPolicy.size() == 1 && !custom){
-				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
-						authResponse.getMessage(), user);
-				for (String uid : policyUids) {
-					policy += "uid_" + uid + " ";
-				}
-				policy += "notObtainable 1of2";
-			}
-			else if(accessPolicy.size() == 1 && custom){
-				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
-						authResponse.getMessage(), user);
-				for (String uid : policyUids) {
-					policy += "uid_" + uid + " ";
-				}
-				policy += "notObtainable 1of2 ";
-				long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
-				if(count == 1){
-					policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2 1of2";
-				}
-				else{
-					policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
-				}
-			}
-			else{
-				ArrayList<String> policyUids = fireBase.getUids(accessPolicy, customAccessPolicy,
-						authResponse.getMessage(), user);
-				int x = 0;
-				for (String uid : policyUids) {
-					x++;
-					policy += "uid_" + uid + " ";
-				}
-				policy += "1of" + x + " ";
-				if (custom) {
-					long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
-					if(count == 1){
-						policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2 1of2";
-					}
-					else{
-						policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
-					}
-				}
-			}
-
-			// Encrypt File
-			byte[] pubByte;
-			try {
-				pubByte = GCPSecretManager.getKeys(user.bucketName + "-public");
-			} catch (IOException e) {
-				return new ResponseEntity<>("Could not get public key", HttpStatus.BAD_REQUEST);
-			}
-			BswabePub pub = SerializeUtils.unserializeBswabePub(pubByte);
-			byte[] encFile;
-			try {
-				encFile = ABE.encrypt(pub, policy, file.getBytes());
-			} catch (Exception e) {
-				logger.error("Could not encrypt file", e);
-				return new ResponseEntity<>("Could not encrypt file", HttpStatus.BAD_REQUEST);
-			}
-
-			// Upload object
-			String filepath = user.parent + "/" + authResponse.getMessage() + "/" + name + "." + extension;
-			FunctionResponse uploadResponse = cloudStorage.uploadFile(user.bucketName, filepath, encFile, type);
-			if (!uploadResponse.successful()) {
-				return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
-			}
-
-			// Add refrence to firestore
-			Map<String, Object> fileInfo = new HashMap<>();
-			fileInfo.put("filepath", filepath);
-			fileInfo.put("opened", false);
-			fileInfo.put("type", type);
-			fileInfo.put("extension", extension);
-			fileInfo.put("uploader", authResponse.getMessage());
-			fileInfo.put("fileName", name);
-
-			String fileRef;
-			try {
-				fileRef = fireBase.addFile(fileInfo);
-			} catch (InterruptedException | ExecutionException ex) {
-				logger.error("Adding file reference to firestore failed", ex);
-				return new ResponseEntity<>("Adding file reference to firestore failed", HttpStatus.BAD_REQUEST);
-			}
-
-			if(custom){
-				accessPolicy.add("custom");
-			}
-
-			// Add refrence to users
 			ArrayList<String> uids = fireBase.getUids(accessPolicy, customAccessPolicy, authResponse.getMessage(),
 					user);
+			String accessPolicyStr = helper.parsePatientPolicy(accessPolicy, customAccessPolicy, uids);
 
-			for (String uid : uids) {
-				try {
-					fireBase.updateArray(uid, "files", fileRef);
-				} catch (InterruptedException | ExecutionException ex) {
-					logger.error("Adding file reference to user " + uid + " failed", ex);
-				}
-
-			}
-			logger.info("File upload for user:" +authResponse.getMessage() + "successful");
-			return new ResponseEntity<>("File Upload Successful", HttpStatus.OK);
+			return uploadFile(authResponse.getMessage(), file, accessPolicyStr, name, uids);
 
 		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("Patient")) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
@@ -301,6 +181,123 @@ public class MyphrplusApplication {
 		}
 	}
 
+	/**
+	 * Handles uploading a file for DRs and DPs
+	 */
+	@RequestMapping(value = "/uploadFile", method = RequestMethod.POST, consumes = { "multipart/form-data" })
+	public ResponseEntity<?> uploadFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
+		@RequestParam(name = "file") MultipartFile file, @RequestParam(name = "name") String name,
+		@RequestParam(name = "accessPolicy") String accessPolicy,
+		@RequestParam(name = "users") List<String> users){
+		// Check auth token
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from user: " + authResponse.getMessage() + " to upload file with name: " + name);
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && (roleCheck.getMessage().equals("DR") || roleCheck.getMessage().equals("DP"))) {
+			//Get patients
+			ArrayList<String> uids = new ArrayList<>();
+			if(roleCheck.getMessage().equals("DR")){
+				uids.add(authResponse.getMessage());
+				for(String user: users){
+					QuerySnapshot qs;
+					try {
+						qs = fireBase.queryUsers("nhsnum", user);
+					} catch (InterruptedException | ExecutionException e) {
+						logger.error("Could not get user: " + user, e);
+						return new ResponseEntity<>("Could not find user with NHS num: " + user, HttpStatus.BAD_REQUEST);
+					}
+					for(QueryDocumentSnapshot doc: qs.getDocuments()){
+						uids.add(doc.getId());
+					}
+				}
+			} else if (roleCheck.getMessage().equals("DP")){
+
+			}
+
+			return uploadFile(authResponse.getMessage(), file, accessPolicy, name, uids);
+		} else {
+			return new ResponseEntity<>("You do not have correct permissions", HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	/**
+	 * Encrypts and Uploads a file to cloud storage, adds reference to firestore 
+	 */
+	private ResponseEntity<?> uploadFile(String uid, MultipartFile file, String accessPolicy, String fileName, ArrayList<String> uids){
+		// Get User object
+		User user;
+		try {
+			user = fireBase.getUserObject(uid);
+		} catch (InterruptedException | ExecutionException ex) {
+			logger.error("Get user failed", ex);
+			return new ResponseEntity<>("Get user object failed", HttpStatus.BAD_REQUEST);
+		}
+		
+		// Check file type + extension
+		FunctionResponse typeCheck = helper.detectFileType(file);
+		if (!typeCheck.successful()) {
+			return new ResponseEntity<>(typeCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		String extension = typeCheck.getMessage().split(" ")[0];
+		String type = typeCheck.getMessage().split(" ")[1];
+
+		// Encrypt File
+		byte[] pubByte;
+		try {
+			pubByte = GCPSecretManager.getKeys(user.bucketName + "-public");
+		} catch (IOException e) {
+			logger.error("Could not get public key for: " + user.bucketName, e);
+			return new ResponseEntity<>("Could not get public key", HttpStatus.BAD_REQUEST);
+		}
+		BswabePub pub = SerializeUtils.unserializeBswabePub(pubByte);
+		byte[] encFile;
+		try {
+			encFile = ABE.encrypt(pub, accessPolicy, file.getBytes());
+		} catch (Exception e) {
+			logger.error("Could not encrypt file", e);
+			return new ResponseEntity<>("Could not encrypt file", HttpStatus.BAD_REQUEST);
+		}
+
+		// Upload object
+		String filepath = user.parent + "/" + uid + "/" + fileName + "." + extension;
+		FunctionResponse uploadResponse = cloudStorage.uploadFile(user.bucketName, filepath, encFile, type);
+		if (!uploadResponse.successful()) {
+			return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+
+		// Add refrence to firestore
+		Map<String, Object> fileInfo = new HashMap<>();
+		fileInfo.put("filepath", filepath);
+		fileInfo.put("type", type);
+		fileInfo.put("extension", extension);
+		fileInfo.put("uploader", uid);
+		fileInfo.put("fileName", fileName);
+
+		String fileRef;
+		try {
+			fileRef = fireBase.addFile(fileInfo);
+		} catch (InterruptedException | ExecutionException ex) {
+			logger.error("Adding file reference to firestore failed", ex);
+			return new ResponseEntity<>("Adding file reference to firestore failed", HttpStatus.BAD_REQUEST);
+		}
+
+
+		for (String uidTemp : uids) {
+			try {
+				fireBase.updateArray(uidTemp, "files", fileRef);
+			} catch (InterruptedException | ExecutionException ex) {
+				logger.error("Adding file reference to user " + uidTemp + " failed", ex);
+			}
+		}
+
+		logger.info("File upload for user:" + uid + " successful");
+		return new ResponseEntity<>("File Upload Successful", HttpStatus.OK);
+	}
+
+		
 	/**
 	 * Returns a users role
 	 * 
@@ -328,7 +325,7 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/newDP", method = RequestMethod.POST)
-	public ResponseEntity<?> newDP(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody DP user) {
+	public ResponseEntity<?> newDP(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user) {
 		logger.info("Incoming request to add DP with name:" +user.name);
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
@@ -398,7 +395,7 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/newDR", method = RequestMethod.POST)
-	public ResponseEntity<?> newDR(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody DR user) {
+	public ResponseEntity<?> newDR(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user) {
 		logger.info("Incoming request to add DR with name" + user.name);
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
@@ -512,7 +509,7 @@ public class MyphrplusApplication {
 					HttpStatus.BAD_REQUEST);
 		}
 		ByteArrayResource resFile = new ByteArrayResource(decFile);
-
+		logger.info("Request to download file: " + fileRef + " was successful");
 		return ResponseEntity.ok().contentLength(resFile.contentLength())
 				.contentType(MediaType.parseMediaType(fileType)).body(resFile);
 	}

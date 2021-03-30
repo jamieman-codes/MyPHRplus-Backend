@@ -1,6 +1,7 @@
 package com.jws1g18.myphrplus;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -115,5 +116,67 @@ public class Helpers {
 
 		// Gen private key
 		return ABE.genPrivKey(pub, msk, attributes);
+    }
+
+    /**
+     * Parse's patient input into a valid access policy for encryption
+     * @param accessPolicy Values selected for encryption
+     * @param customAccessPolicy Custom policy, if selected
+     * @param policyUids UIDs of users selected
+     * @return access policy as a string
+     */
+    public String parsePatientPolicy(ArrayList<String> accessPolicy, String customAccessPolicy, ArrayList<String> policyUids){
+        String policy = "";
+        Boolean custom = false;
+        if (accessPolicy.contains("custom")) {
+            accessPolicy.remove("custom");
+            custom = true;
+        }
+        if(accessPolicy.size() == 0 && custom){
+            long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
+            if(count == 1){
+                policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2";
+            }
+            else{
+                policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count;
+            }
+        }
+        else if(accessPolicy.size() == 1 && !custom){
+            for (String uid : policyUids) {
+                policy += "uid_" + uid + " ";
+            }
+            policy += "notObtainable 1of2";
+        }
+        else if(accessPolicy.size() == 1 && custom){
+            for (String uid : policyUids) {
+                policy += "uid_" + uid + " ";
+            }
+            policy += "notObtainable 1of2 ";
+            long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
+            if(count == 1){
+                policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2 1of2";
+            }
+            else{
+                policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
+            }
+        }
+        else{
+            int x = 0;
+            for (String uid : policyUids) {
+                x++;
+                policy += "uid_" + uid + " ";
+            }
+            policy += "1of" + x + " ";
+            if (custom) {
+                long count = customAccessPolicy.chars().filter(ch -> ch == ',').count() + 1;
+                if(count == 1){
+                    policy += customAccessPolicy.replace(",", " ") + " notObtainable 1of2 1of2";
+                }
+                else{
+                    policy += customAccessPolicy.replace(",", " ") + " " + count + "of" + count + " 1of2";
+                }
+            }
+        }
+        return policy;
     }
 }
