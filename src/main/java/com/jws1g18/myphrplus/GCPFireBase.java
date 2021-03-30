@@ -32,7 +32,7 @@ import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
 import com.google.firebase.auth.UserRecord.CreateRequest;
 import com.google.firebase.cloud.FirestoreClient;
-
+import com.google.firestore.v1.Document;
 import com.jws1g18.myphrplus.DTOS.User;
 
 import org.slf4j.Logger;
@@ -106,7 +106,7 @@ public class GCPFireBase {
      * @return Function Response containing a success value and a message
      */
     public FunctionResponse addPatient(String uid, User user, ArrayList<String> attributes) {
-        // Randomly doctor for patient.
+        // Randomly assignmdoctor for patient.
         DocumentReference docRef = this.db.collection("users").document(user.parent);
         ApiFuture<DocumentSnapshot> future = docRef.get();
         DocumentSnapshot document;
@@ -124,11 +124,12 @@ public class GCPFireBase {
         Map<String, Object> data = new HashMap<>();
         data.put("name", user.name);
         data.put("email", user.email);
-        data.put("role", user.role);
+        data.put("role", "Patient");
         data.put("nhsnum", user.nhsnum);
         data.put("bucketName", dp.bucketName);
         data.put("parent", dr);
         data.put("attributes", attributes);
+        data.put("files", new ArrayList<String>());
 
         // Update parent with child info
         try {
@@ -198,11 +199,9 @@ public class GCPFireBase {
                 // Get every user within the same bucket as user
                 try{
                     query = queryUsers("bucketName", patient.bucketName);
-                } catch(InterruptedException ex){
+                } catch(InterruptedException | ExecutionException ex){
                     break;
-                } catch(ExecutionException ex){
-                    break;
-                }
+                } 
                 // Check if the returned documents contain every attribute specifed
                 for(QueryDocumentSnapshot doc: query.getDocuments()){
                     List<String> attrs = (List<String>) doc.get("attributes");
@@ -264,19 +263,89 @@ public class GCPFireBase {
 
     /**
      * Deletes a user from the firestore given their user ID
-     * 
      * @param userID
      * @return True if successful, False if failed
      */
     public FunctionResponse deleteUser(String userID) {
-        ApiFuture<WriteResult> writeResult = this.db.collection("users").document(userID).delete();
+        DocumentReference userDocRef = this.db.collection("users").document(userID);
+        DocumentSnapshot userDoc;
         try {
-            writeResult.get();
-            return new FunctionResponse(true, "User Deleted");
+            userDoc = userDocRef.get().get();
         } catch (InterruptedException | ExecutionException ex) {
-            logger.error("Deleting user "+ userID +" failed", ex);
-            return new FunctionResponse(false, "Failed to delete user");
-        } 
+            logger.error("Getting user "+ userID +" failed", ex);
+            return new FunctionResponse(false, "Failed to find user");
+        }
+        String role = userDoc.getString("role");
+        if(role.equals("DP") || role.equals("admin")){
+            return new FunctionResponse(false, "Cannot delete account due to role. Contact System Admin");
+        }
+        else if(role.equals("Patient")){
+            String parent = userDoc.getString("parent");
+            try{
+                this.db.collection("users").document(parent).update("patients", FieldValue.arrayRemove(userID)).get();
+                userDocRef.delete().get();
+                GCPSecretManager.destroySecretVersion(userID);
+                this.auth.deleteUser(userID);
+                return new FunctionResponse(true, "Account Deleted");
+            } catch (InterruptedException | ExecutionException ex){
+                logger.error("Error whilst deleting user", ex);
+                return new FunctionResponse(false, "Error whilst deleting user");
+            } catch (FirebaseAuthException e) {
+                logger.error("Error whilst removing user from firebase", e);
+                return new FunctionResponse(false, "Error whilst deleting user");
+            } catch (IOException ex){
+                logger.error("Error whilst removing private key", ex);
+                return new FunctionResponse(false, "Error whilst deleting user");
+            }
+        } else if(role.equals("DR")){
+            String parent = userDoc.getString("parent");
+            //Find all DRs in same bucket (need to reassign patients)
+            QuerySnapshot qs;
+            try {
+                qs = this.db.collection("users").whereEqualTo("bucketName", userDoc.get("bucketName")).whereEqualTo("role", "DR").get().get();
+            } catch (InterruptedException | ExecutionException e) {
+                logger.error("Query to find DRs in same bucket failed", e);
+                return new FunctionResponse(false, "Query to reasign patients failed");
+            }
+            if(qs.size() <= 1){
+                return new FunctionResponse(false, "Last DR registered to DP, cannot delete account. Please contact System Admin");
+            }
+            //Get new DR
+            List<QueryDocumentSnapshot> docs = qs.getDocuments();
+            String newDR = docs.get(rand.nextInt(docs.size())).getId();
+            //Assign patient to new DR and new DR to patients
+            for(String patient: (ArrayList<String>) userDoc.get("patients")){
+                try {
+                    updateField("users", patient, "parent", newDR);
+                } catch (InterruptedException | ExecutionException e) {
+                    logger.error("Couldnt update user:" + patient + " with new parent", e);
+                }
+                try {
+                    updateArray(newDR, "patients", patient);
+                } catch (InterruptedException | ExecutionException e) {
+                    logger.error("Couldnt update parent:" + newDR + " with new patient", e);
+                }
+            }
+            try {
+                this.db.collection("users").document(parent).update("dataRequesters", FieldValue.arrayRemove(userID)).get();
+                userDocRef.delete().get();
+                GCPSecretManager.destroySecretVersion(userID);
+                this.auth.deleteUser(userID);
+                return new FunctionResponse(true, "Delete successful");
+            } catch (InterruptedException | ExecutionException e) {
+                logger.error("Couldn't delete user: " +userID, e);
+                return new FunctionResponse(false, "Delete Failed");
+            } catch (FirebaseAuthException e) {
+                logger.error("Error whilst removing user from firebase", e);
+                return new FunctionResponse(false, "Error whilst deleting user");
+            } catch (IOException e) {
+                logger.error("Error whilst removing private key", e);
+                return new FunctionResponse(false, "Error whilst deleting user");
+            }
+        } else{
+            logger.error("Request to delete with invalid role");
+            return new FunctionResponse(false, "invalid role");
+        }
     }
 
     /**
@@ -369,9 +438,10 @@ public class GCPFireBase {
         Map<String, Object> data = new HashMap<>();
         data.put("name", user.name);
         data.put("email", user.email);
-        data.put("role", user.role);
+        data.put("role", "DP");
         data.put("bucketName", bucketName);
         data.put("attributes", attributes);
+        data.put("files", new ArrayList<String>());
 
         ArrayList<String> dataRequesters = new ArrayList<>();
         data.put("dataRequesters", dataRequesters);
@@ -410,7 +480,7 @@ public class GCPFireBase {
         Map<String, Object> data = new HashMap<>();
         data.put("name", user.name);
         data.put("email", user.email);
-        data.put("role", user.role);
+        data.put("role", "DR");
         data.put("bucketName", parent.bucketName);
         data.put("parent", parentUid);
         data.put("attributes", attributes);

@@ -127,6 +127,35 @@ public class MyphrplusApplication {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 		logger.info("Authenticated request to delete user: " + authResponse.getMessage());
+		// Get user object
+		User user;
+		try {
+			user = fireBase.getUserObject(authResponse.getMessage());
+		} catch (InterruptedException | ExecutionException e) {
+			logger.error("Couldn't get user object", e);
+			return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
+		}
+
+		if (user.role.equals("DP") || user.role.equals("admin")) {
+			return new ResponseEntity<>("Cannot delete account due to role. Contact System Admin", HttpStatus.BAD_REQUEST);
+		}
+
+		// Delete files
+		for(String fileRef: user.files){
+			FunctionResponse deleteResponse = fireBase.deleteFile(authResponse.getMessage(), fileRef);
+			if(deleteResponse.successful() && !deleteResponse.getMessage().equals("No delete needed")){
+				Boolean delete = cloudStorage.deleteFile(user.bucketName, deleteResponse.getMessage());
+				if(delete){
+					logger.info("File: " + fileRef + " deleted from cloud storage during account deletion");
+				}
+				else{
+					return new ResponseEntity<>("Error occured whilst deleting your files", HttpStatus.BAD_REQUEST);
+				}
+			} else if(!deleteResponse.successful()) {
+				return new ResponseEntity<>(deleteResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+		}
+
 		// Delete user
 		FunctionResponse deleteResponse = fireBase.deleteUser(authResponse.getMessage());
 		if (deleteResponse.successful()) {
