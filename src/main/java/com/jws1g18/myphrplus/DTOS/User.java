@@ -12,7 +12,10 @@ public class User {
     public String bucketName = "";
     public String password = "";
     public String parent = "";
+    public String nhsnum;
     public ArrayList<String> attributes;
+    public ArrayList<String> patients;
+    public ArrayList<String> dataRequesters;
     public ArrayList<String> files;
 
     public String convertToJson() {
