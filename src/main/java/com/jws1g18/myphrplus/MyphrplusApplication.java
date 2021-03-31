@@ -863,4 +863,61 @@ public class MyphrplusApplication {
 			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 	}
+
+	/**
+	 * Returns a users reminders, with optional param NHSNUM if request is sent via DP
+	 * @param uidToken
+	 * @param nhsnum
+	 * @return
+	 */
+	@RequestMapping(value="/getReminders", method=RequestMethod.GET)
+	public ResponseEntity<?> getReminders(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsnum){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get reminders ");
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse reminderResponse = fireBase.getPatientReminders(nhsnum);
+			if(reminderResponse.successful()){
+				logger.info("Get reminder request successful");
+				return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		} else if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
+			FunctionResponse reminderResponse = fireBase.getReminders(authResponse.getMessage());
+			if(reminderResponse.successful()){
+				logger.info("Get reminder request successful");
+				return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value="/addReminder", method=RequestMethod.POST)
+	public ResponseEntity<?> addReminder(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsnum, @RequestParam("reminder") String reminder){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add reminder: " + reminder + " to: " + nhsnum);
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse addResponse = fireBase.addReminder(nhsnum, reminder);
+			if(addResponse.successful()){
+				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
+
+		}else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
 }

@@ -17,6 +17,7 @@ public class User {
     public ArrayList<String> patients;
     public ArrayList<String> dataRequesters;
     public ArrayList<String> files;
+    public ArrayList<String> reminders;
 
     public String convertToJson() {
         return Json.createObjectBuilder().add("name", name).add("email", email).add("role", role).build().toString();

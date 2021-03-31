@@ -186,10 +186,22 @@ public class Helpers {
      * @return true if not valid
      */
     public boolean validateNewAttribute(String attribute){
-        return attribute.equals("notObtainable") || attribute.contains(" ") || attribute.subSequence(0, 7).equals("nhsNum_") ||  attribute.subSequence(0,4).equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
+        String subString1 = "";
+        String subString2 = "";
+        try{
+            subString1 = (String) attribute.subSequence(0, 7);
+            subString2 = (String) attribute.subSequence(0,4);
+        } catch (StringIndexOutOfBoundsException ex){}
+        return attribute.equals("notObtainable") || attribute.contains(" ") || subString1.equals("nhsNum_") ||  subString2.equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
     }
 
     public boolean validateRemoveAttribute(String attribute){
-        return attribute.subSequence(0, 7).equals("nhsNum_") || attribute.equals("Patient") ||  attribute.subSequence(0,4).equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
+        String subString1 = "";
+        String subString2 = "";
+        try{
+            subString1 = (String) attribute.subSequence(0, 7);
+            subString2 = (String) attribute.subSequence(0,4);
+        } catch (StringIndexOutOfBoundsException ex){}
+        return subString1.equals("nhsNum_") || attribute.equals("Patient") ||  subString2.equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
     }
 }

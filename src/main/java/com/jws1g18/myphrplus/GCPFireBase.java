@@ -130,6 +130,7 @@ public class GCPFireBase {
         data.put("parent", dr);
         data.put("attributes", attributes);
         data.put("files", new ArrayList<String>());
+        data.put("reminders", new ArrayList<String>());
 
         // Update parent with child info
         try {
@@ -1024,5 +1025,83 @@ public class GCPFireBase {
             return new FunctionResponse(false, "Couldn't process JSON");
         }
 
+    }
+
+    /**
+     * Gets a ptients reminders from their NHS num
+     * @param nhsNum NHS num of patient
+     * @return JSON array of reminders
+     */
+    public FunctionResponse getPatientReminders(String nhsNum){
+        String uid = getUIDfromNHSnum(nhsNum);
+        if(uid != null){
+            return getReminders(uid);
+        }
+        return new FunctionResponse(false, "Couldn't find user");
+    }
+
+    /**
+     * Gets a users reminders from their UID 
+     * @param uid user ID of user
+     * @return JSON array of reminders
+     */
+    public FunctionResponse getReminders(String uid){
+        ArrayList<String> reminders;
+        try {
+            reminders = (ArrayList<String>) this.db.collection("users").document(uid).get().get().get("reminders");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't get reminders for user: " + uid, e);
+            return new FunctionResponse(false ,"Could not retrieve reminders");
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+        for(String rem: reminders){
+            arrayNode.addObject().put("reminder", rem);
+        }
+        try {
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            logger.error("Couldn't proccess JSON", e);
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    public FunctionResponse addReminder(String nhsNum, String reminder){
+        String uid = getUIDfromNHSnum(nhsNum);
+        if(uid != null){
+            try {
+                updateArray(uid, "reminders", reminder);
+                return new FunctionResponse(true, "Reminder added");
+            } catch (InterruptedException | ExecutionException e) {
+                logger.error("Couldn't add new reminder to: " + uid, e);
+                return new FunctionResponse(false, "Failed to add reminder");
+            }
+        }
+        return new FunctionResponse(false, "Couldn't find user");
+    }
+
+    /**
+     * Gets a patients User ID from an NHSnum
+     * @param nhsNum NHS num of user
+     * @return User ID
+     */
+    private String getUIDfromNHSnum(String nhsNum){
+        // Lookup patient from NHS num
+        QuerySnapshot snapshot;
+        try {
+            snapshot = queryUsers("nhsnum", nhsNum);
+        } catch (InterruptedException | ExecutionException e) {
+            return null;
+        }
+        String uid = null;
+        int x = 0;
+        for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
+           uid = doc.getId();
+           x++;
+       }
+       if(x>1){
+           return null;
+       }
+       return uid;
     }
 }
