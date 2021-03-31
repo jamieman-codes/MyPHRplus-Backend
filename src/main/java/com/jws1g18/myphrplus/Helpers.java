@@ -179,4 +179,17 @@ public class Helpers {
         }
         return policy;
     }
+
+    /**
+     * Validates if a new attribute to be added is valid
+     * @param attribute String of attribute
+     * @return true if not valid
+     */
+    public boolean validateNewAttribute(String attribute){
+        return attribute.equals("notObtainable") || attribute.contains(" ") || attribute.subSequence(0, 7).equals("nhsNum_") ||  attribute.subSequence(0,4).equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
+    }
+
+    public boolean validateRemoveAttribute(String attribute){
+        return attribute.subSequence(0, 7).equals("nhsNum_") || attribute.equals("Patient") ||  attribute.subSequence(0,4).equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
+    }
 }

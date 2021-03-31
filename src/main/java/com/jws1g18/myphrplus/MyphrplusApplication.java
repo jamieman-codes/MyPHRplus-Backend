@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
+import com.google.api.Http;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuthException;
@@ -243,7 +244,7 @@ public class MyphrplusApplication {
 					}
 				}
 			} else if (roleCheck.getMessage().equals("DP")){
-
+				uids = new ArrayList<>(users);
 			}
 
 			return uploadFile(authResponse.getMessage(), file, accessPolicy, name, uids);
@@ -647,7 +648,37 @@ public class MyphrplusApplication {
 	}
 
 	/**
-	 * Returns a list of patient attributes
+	 * Returns a list of user attributes from a UID
+	 * @param uidToken
+	 * @param uid
+	 * @return
+	 */
+	@RequestMapping(value="/getUserAttributes", method = RequestMethod.POST)
+	public ResponseEntity<?> getUserAttributes(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("uid") String uid){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get a user: " + uid + " attributes ");
+		// Check user is DP
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
+			FunctionResponse attrResponse = fireBase.getUserAttributes(uid);
+			if(attrResponse.successful()){
+				logger.info("Request from : " + authResponse.getMessage() + " to get user attributes successful");
+				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+
+	/**
+	 * Returns a list of patient attributes from an NHS num
 	 * @param uidToken
 	 * @param nhsNum
 	 * @return
@@ -669,6 +700,33 @@ public class MyphrplusApplication {
 			}else{
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value="/addUserAttribute", method=RequestMethod.POST)
+	public ResponseEntity<?> addUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("uid") String uid, @RequestParam("attribute") String attribute){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add attribute " + attribute + " to user: " +uid);
+		if(helper.validateNewAttribute(attribute)){
+			logger.error("Invalid attribute entered");
+			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
+		}
+		// Check user is DP
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
+			FunctionResponse addResponse = fireBase.updateUserAttributes(uid, attribute);
+			if(addResponse.successful()){
+				logger.info("Request from: " + authResponse.getMessage() + " to add attribute successful");
+				return new ResponseEntity<>("Add successful", HttpStatus.OK);
+			}
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
 		} else {
@@ -683,21 +741,21 @@ public class MyphrplusApplication {
 	 * @param attribute
 	 * @return
 	 */
-	@RequestMapping(value="/addAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> addAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
+	@RequestMapping(value="/addPatientAttribute", method=RequestMethod.POST)
+	public ResponseEntity<?> addPatientAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add attribute " + attribute + " to user: " +nhsNum);
-		if(attribute.equals("notObtainable") || attribute.subSequence(0, 7).equals("nhsNum_") ||  attribute.subSequence(0,4).equals("uid_") || attribute.equals("DR") || attribute.equals("DP")){
+		if(helper.validateNewAttribute(attribute)){
 			logger.error("Invalid attribute entered");
 			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
 		}
 		// Check user is DR
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse addResponse = fireBase.updateAttributes(nhsNum, attribute);
+			FunctionResponse addResponse = fireBase.updatePatientAttributes(nhsNum, attribute);
 			if(addResponse.successful()){
 				logger.info("Add attribute request from: " + authResponse.getMessage() + " successfull");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
@@ -705,6 +763,33 @@ public class MyphrplusApplication {
 			else{
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	@RequestMapping(value="/removeUserAttribute", method=RequestMethod.POST)
+	public ResponseEntity<?> removeUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("uid") String uid, @RequestParam("attribute") String attribute){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove attribute " + attribute + " to user: " +uid);
+		if(helper.validateRemoveAttribute(attribute)){
+			logger.error("Attribute not allowed to be deleted");
+			return new ResponseEntity<>("Cannot delete this attribute", HttpStatus.BAD_REQUEST);
+		}
+		// Check user is DP
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
+			FunctionResponse delResponse = fireBase.removeUserAttribute(uid, attribute);
+			if(delResponse.successful()){
+				logger.info("Remove attribute request from: " + authResponse.getMessage() + " successfull");
+				return new ResponseEntity<>("Delete successful", HttpStatus.OK);
+			}
+			return new ResponseEntity<>(delResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
 		} else {
@@ -719,21 +804,21 @@ public class MyphrplusApplication {
 	 * @param attribute
 	 * @return
 	 */
-	@RequestMapping(value="/removeAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> removeAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
+	@RequestMapping(value="/removePatientAttribute", method=RequestMethod.POST)
+	public ResponseEntity<?> removePatientAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove attribute " + attribute + " to user: " +nhsNum);
-		if(attribute.subSequence(0, 7).equals("nhsNum_") || attribute.equals("Patient")){
+		if(helper.validateRemoveAttribute(attribute)){
 			logger.error("Attribute not allowed to be deleted");
 			return new ResponseEntity<>("Cannot delete this attribute", HttpStatus.BAD_REQUEST);
 		}
 		// Check user is DR
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse removeResponse = fireBase.removeAttribute(nhsNum, attribute);
+			FunctionResponse removeResponse = fireBase.removePatientAttribute(nhsNum, attribute);
 			if(removeResponse.successful()){
 				logger.info("Remove attribute request from: " + authResponse.getMessage() + " successfull");
 				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.OK);
@@ -741,6 +826,37 @@ public class MyphrplusApplication {
 			else{
 				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	/**
+	 * Returns a JSON of all users in the request DPs bucket, for use when uploading files
+	 * @param uidToken 
+	 * @return
+	 */
+	@RequestMapping(value="/getAllInBucket", method=RequestMethod.GET)
+	public ResponseEntity<?> getAllInBucket(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get all users in bucket");
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
+			FunctionResponse getResponse = fireBase.getAllInBucket(authResponse.getMessage());
+			if(getResponse.successful()){
+				logger.info("Request from " + authResponse.getMessage() + " to get all users in bucket successful");
+				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
+			}
+			else{
+				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+
 		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
 		} else {

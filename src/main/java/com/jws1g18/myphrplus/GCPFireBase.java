@@ -709,6 +709,44 @@ public class GCPFireBase {
     }
 
     /**
+     * Gets a list of a users attributes in JSON form from a user ID
+     * @param uid
+     * @return
+     */
+    public FunctionResponse getUserAttributes(String uid){
+        User user;
+        try {
+            user = getUserObject(uid);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't find user: " + uid, e);
+            return new FunctionResponse(false, "");
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+        int max;
+        if(user.role.equals("DR")){
+            max = 2;
+        } else{ max = 3;}
+        int x = 0;
+        for(String attr: user.attributes){
+            ObjectNode attrNode = arrayNode.addObject();
+            attrNode.put("attribute", attr);
+            if(x<max){
+                attrNode.put("remove", false);
+            } else{
+                attrNode.put("remove", true);
+            }
+            x++;
+        }
+        try {
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            logger.error("Couldn't proccess JSON", e);
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    /**
      * Gets a list of a patients attributes in JSON form from an NHS num
      * @param nhsNum
      * @return
@@ -741,7 +779,7 @@ public class GCPFireBase {
             if(x>0){
                 ObjectNode attrNode = arrayNode.addObject();
                 attrNode.put("attribute", attr);
-                if(x>2){
+                if(x<3){
                     attrNode.put("remove", false);
                 } else{
                     attrNode.put("remove", true);
@@ -759,16 +797,34 @@ public class GCPFireBase {
 
     /**
      * Adds a new attribute to a user and updates their private key 
-     * @param nhsNum
-     * @param attr
+     * @param uid user id of user to update
+     * @param attr attribute
      * @return
      */
-    public FunctionResponse updateAttributes(String nhsNum, String attr){
+    public FunctionResponse updateUserAttributes(String uid, String attr){
+        User user;
+        try {
+            user = getUserObject(uid);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user from firestore", e);
+            return new FunctionResponse(false, "Could not get user from firestore");
+        }
+        return updateAttribute(uid, user.bucketName, user.attributes, attr);
+    }
+
+    /**
+     * Adds a new attribute to a patient and updates their private key 
+     * @param nhsNum nhs number of patient to update
+     * @param attr attribute
+     * @return
+     */
+    public FunctionResponse updatePatientAttributes(String nhsNum, String attr){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
         try {
             snapshot = queryUsers("nhsnum", nhsNum);
         } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user from firestore", e);
             return new FunctionResponse(false, "Could not get from FireStore");
         }
         String uid = null;
@@ -784,7 +840,18 @@ public class GCPFireBase {
         if(x>1 || uid == null){
             return new FunctionResponse(false, "Failed to get patient");
         }
+        return updateAttribute(uid, bucketName, attributes, attr);
+    }
 
+    /**
+     * Generates a new private key, stores it and then updates firestore with new attribute
+     * @param uid User ID of user to update
+     * @param bucketName Bucketname user to registered too
+     * @param attributes Current user attributes
+     * @param attr New attribute
+     * @return
+     */
+    private FunctionResponse updateAttribute(String uid, String bucketName, ArrayList<String> attributes, String attr){
         // Generate & store new primary key
         attributes.add(attr);
         FunctionResponse keyRes = helper.genAndUpdatePrivKey(bucketName, attributes.toArray(new String[0]), uid);
@@ -805,12 +872,29 @@ public class GCPFireBase {
     }
 
     /**
-     * Removes an attribute from a user and updates their private key
-     * @param nhsNum
-     * @param attr
+     * Removes an attribute from a user given their user ID 
+     * @param uid user id of user
+     * @param attr attribute to remove
      * @return
      */
-    public FunctionResponse removeAttribute(String nhsNum, String attr){
+    public FunctionResponse removeUserAttribute(String uid, String attr){
+        User user;
+        try {
+            user = getUserObject(uid);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user from firestore", e);
+            return new FunctionResponse(false, "Could not get user from firestore");
+        }
+        return removeAttribute(uid, user.bucketName, user.attributes, attr);
+    }
+
+    /**
+     * Removes an attribute from a patient and updates their private key
+     * @param nhsNum patients NHS num
+     * @param attr attribute to remove
+     * @return
+     */
+    public FunctionResponse removePatientAttribute(String nhsNum, String attr){
          // Lookup patient from NHS num
          QuerySnapshot snapshot;
          try {
@@ -831,7 +915,18 @@ public class GCPFireBase {
          if(x>1 || uid == null){
              return new FunctionResponse(false, "Failed to get patient");
         }
+        return removeAttribute(uid, bucketName, attributes, attr);
+    }
 
+    /**
+     * Removes an attribute from firestore and updates a users private key
+     * @param uid User ID of user to update
+     * @param bucketName Bucketname of bucket user is registered too
+     * @param attributes Current attributes
+     * @param attr Attribute to remove
+     * @return
+     */
+    private FunctionResponse removeAttribute(String uid, String bucketName, ArrayList<String> attributes, String attr){
         // Generate & store new primary key
         attributes.remove(attr);
         FunctionResponse keyRes = helper.genAndUpdatePrivKey(bucketName, attributes.toArray(new String[0]), uid);
@@ -888,5 +983,46 @@ public class GCPFireBase {
             }
         }
         return new FunctionResponse(true, "No delete needed");
+    }
+
+    /**
+     * Returns a JSON of all users in the bucket of the specifed user
+     * @param uid
+     * @return
+     */
+    public FunctionResponse getAllInBucket(String uid){
+        User user;
+        try {
+            user = getUserObject(uid);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user object", e);
+            return new FunctionResponse(false, "Could not find user");
+        }
+        QuerySnapshot qs;
+        try {
+            qs = queryUsers("bucketName", user.bucketName);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Query failed when trying to get all users in bucket: " + user.bucketName, e);
+            return new FunctionResponse(false, "Could not get all users in bucket");
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+        for(QueryDocumentSnapshot doc: qs.getDocuments()){
+            if(!uid.equals(doc.getId())){
+                ObjectNode objectNode = arrayNode.addObject();
+                objectNode.put("name", doc.getString("name"));
+                objectNode.put("uid", doc.getId());
+                objectNode.put("role", doc.getString("role"));
+                objectNode.put("email", doc.getString("email"));
+            }
+        }
+
+        try {
+            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            logger.error("Couldn't proccess JSON", e);
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+
     }
 }
