@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.api.Http;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
@@ -898,6 +902,13 @@ public class MyphrplusApplication {
 		}
 	}
 
+	/**
+	 * Adds a reminder to a users firestore
+	 * @param uidToken Token of DR making request
+	 * @param nhsnum NHS num of patient to add too
+	 * @param reminder Reminder too add
+	 * @return
+	 */
 	@RequestMapping(value="/addReminder", method=RequestMethod.POST)
 	public ResponseEntity<?> addReminder(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsnum, @RequestParam("reminder") String reminder){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
@@ -910,6 +921,7 @@ public class MyphrplusApplication {
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			FunctionResponse addResponse = fireBase.addReminder(nhsnum, reminder);
 			if(addResponse.successful()){
+				logger.info("Add request from: " + authResponse.getMessage() + " was successful");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -919,5 +931,74 @@ public class MyphrplusApplication {
 		} else {
 			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
 		}
+	}
+
+	@RequestMapping(value="/removeReminder", method=RequestMethod.POST)
+	public ResponseEntity<?> removeReminder(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("reminder") String reminder){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove reminder: " + reminder);
+		FunctionResponse removeResponse = fireBase.removeReminder(authResponse.getMessage(), reminder);
+		if(removeResponse.successful()){
+			logger.info("Reminder successfully removed");
+			return new ResponseEntity<>("Delete successful", HttpStatus.OK);
+		}
+		return new ResponseEntity<>("Delete failed", HttpStatus.BAD_REQUEST);
+	}
+
+	/**
+	 * Gets the information to be displayed on the dashboard in JSON form
+	 * @param uidToken 
+	 * @return
+	 */
+	@RequestMapping(value="/getDashboardInfo", method=RequestMethod.GET)
+	public ResponseEntity<?> getDashboardInfo(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get dashboard information");
+		User user;
+        try {
+            user = fireBase.getUserObject(authResponse.getMessage());
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user", e);
+            return new ResponseEntity<>("Could not get user", HttpStatus.BAD_REQUEST);
+        }
+
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode objectNode = mapper.createObjectNode();
+        if(user.role.equals("Patient")){
+			try {
+				objectNode.put("DR", fireBase.getDB().collection("users").document(user.parent).get().get().getString("name"));
+			} catch (InterruptedException | ExecutionException e) {
+				logger.error("Couldn't get parent: " + user.parent);
+			}
+			
+            ArrayNode arrayNode = mapper.createArrayNode();
+            for(String rem: user.reminders){
+                arrayNode.addObject().put("reminder", rem);
+            }
+            objectNode.set("items", arrayNode);
+        } else if(user.role.equals("DR")){
+            String hospital = user.bucketName.replace("-myphrplus-backend", "");
+            objectNode.put("hospital", hospital.replace("-", " "));
+            objectNode.put("patients", user.patients.size());
+        } else if(user.role.equals("DP")){
+            objectNode.put("DRs", user.dataRequesters.size());
+        } else if(user.role.equals("admin")){
+
+        } else{
+            return new ResponseEntity<>("Invalid role, contact System Admin", HttpStatus.BAD_REQUEST);
+        }
+        try {
+			logger.info("Dashboard information request from: " + authResponse.getMessage() + " successful");
+            return new ResponseEntity<>(mapper.writer().writeValueAsString(objectNode), HttpStatus.OK);
+        } catch (JsonProcessingException e) {
+            logger.error("JSON proccessing error");
+            return new ResponseEntity<>("Could not process JSON", HttpStatus.BAD_REQUEST);
+        }
 	}
 }

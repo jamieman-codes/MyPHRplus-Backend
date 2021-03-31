@@ -32,7 +32,6 @@ import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
 import com.google.firebase.auth.UserRecord.CreateRequest;
 import com.google.firebase.cloud.FirestoreClient;
-import com.google.firestore.v1.Document;
 import com.jws1g18.myphrplus.DTOS.User;
 
 import org.slf4j.Logger;
@@ -579,7 +578,7 @@ public class GCPFireBase {
             }
         }
         try{
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException ex){
             logger.error("JSON could not be proccessed", ex);
             return new FunctionResponse(false, "Couldn't process JSON");
@@ -608,7 +607,7 @@ public class GCPFireBase {
             dpNode.put("value", doc.getId());
         }
         try {
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
             logger.error("Could not proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
@@ -645,7 +644,7 @@ public class GCPFireBase {
             }
         }
         try {
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
             logger.error("Could not process JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
@@ -740,7 +739,7 @@ public class GCPFireBase {
             x++;
         }
         try {
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
             logger.error("Couldn't proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
@@ -789,7 +788,7 @@ public class GCPFireBase {
             x++;
         }
         try {
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
             logger.error("Couldn't proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
@@ -1019,7 +1018,7 @@ public class GCPFireBase {
         }
 
         try {
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
             logger.error("Couldn't proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
@@ -1059,13 +1058,19 @@ public class GCPFireBase {
             arrayNode.addObject().put("reminder", rem);
         }
         try {
-            return new FunctionResponse(true, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(arrayNode));
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
         } catch (JsonProcessingException e) {
             logger.error("Couldn't proccess JSON", e);
             return new FunctionResponse(false, "Couldn't process JSON");
         }
     }
 
+    /**
+     * Adds a reminder to firestore given a NHS num of a patient
+     * @param nhsNum
+     * @param reminder
+     * @return
+     */
     public FunctionResponse addReminder(String nhsNum, String reminder){
         String uid = getUIDfromNHSnum(nhsNum);
         if(uid != null){
@@ -1078,6 +1083,22 @@ public class GCPFireBase {
             }
         }
         return new FunctionResponse(false, "Couldn't find user");
+    }
+
+    /**
+     * Removes a reminder from a patient
+     * @param uid
+     * @param reminder
+     * @return
+     */
+    public FunctionResponse removeReminder(String uid, String reminder){
+        try {
+            this.db.collection("users").document(uid).update("reminders", FieldValue.arrayRemove(reminder)).get();
+            return new FunctionResponse(true, "Delete successful");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Error whilst removing reminder", e);
+            return new FunctionResponse(false, "Delete failed");
+        }
     }
 
     /**
