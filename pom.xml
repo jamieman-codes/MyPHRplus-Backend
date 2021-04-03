@@ -87,30 +87,29 @@
 			<version>2.12.2</version>
 		</dependency>
 		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+			<version>3.5</version>
+		</dependency>
+		<dependency>
 			<groupId>it.unisa.dia.gas</groupId>
 			<artifactId>jpbc-api</artifactId>
 			<version>1.2.1</version>
-			<scope>system</scope>
-			<systemPath>${pom.basedir}/lib/jpbc-api-1.2.1.jar</systemPath>
 		</dependency>
 		<dependency>
 			<groupId>it.unisa.dia.gas</groupId>
 			<artifactId>jpbc-plaf</artifactId>
 			<version>1.2.1</version>
-			<scope>system</scope>
-			<systemPath>${pom.basedir}/lib/jpbc-plaf-1.2.1.jar</systemPath>
 		</dependency>
 		<dependency>
 			<groupId>co.junwei.cpabe</groupId>
 			<artifactId>cpabe-api</artifactId>
 			<version>1.0.2</version>
-			<scope>system</scope>
-			<systemPath>${pom.basedir}/lib/cpabe-api-1.0.2.jar</systemPath>
 		</dependency>
 		<dependency>
-			<groupId>org.apache.commons</groupId>
-			<artifactId>commons-lang3</artifactId>
-			<version>3.5</version>
+			<groupId>org.jsoup</groupId>
+			<artifactId>jsoup</artifactId>
+			<version>1.13.1</version>
 		</dependency>
 	</dependencies>
 

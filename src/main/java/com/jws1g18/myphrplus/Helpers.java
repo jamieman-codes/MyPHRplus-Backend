@@ -7,6 +7,8 @@ import java.util.List;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.tika.Tika;
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Whitelist;
 import org.springframework.web.multipart.MultipartFile;
 
 import co.junwei.bswabe.BswabeMsk;
@@ -203,5 +205,9 @@ public class Helpers {
             subString2 = (String) attribute.subSequence(0,4);
         } catch (StringIndexOutOfBoundsException ex){}
         return subString1.equals("nhsNum_") || attribute.equals("Patient") ||  subString2.equals("uid_") || attribute.equals("DR") || attribute.equals("DP");
+    }
+
+    public String cleanHtml(String html){
+        return Jsoup.clean(html, Whitelist.relaxed());
     }
 }

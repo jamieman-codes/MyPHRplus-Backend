@@ -1,6 +1,11 @@
 package com.jws1g18.myphrplus;
 
 import java.io.IOException;
+import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,14 +16,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.google.api.Http;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
-import com.google.firestore.v1.Document;
 import com.jws1g18.myphrplus.DTOS.User;
 
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.http.client.utils.Idn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -296,7 +301,7 @@ public class MyphrplusApplication {
 		}
 
 		// Upload object
-		String filepath = user.parent + "/" + uid + "/" + fileName + "." + extension;
+		String filepath = user.parent + "/" + uid + "/" + RandomStringUtils.random(20);
 		FunctionResponse uploadResponse = cloudStorage.uploadFile(user.bucketName, filepath, encFile, type);
 		if (!uploadResponse.successful()) {
 			return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -534,7 +539,7 @@ public class MyphrplusApplication {
 	 * @param fileRef
 	 * @return
 	 */
-	@RequestMapping(value = "/downloadFile", method = RequestMethod.GET)
+	@RequestMapping(value = "/downloadFile", method = RequestMethod.POST)
 	public ResponseEntity<?> downloadFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
 			@RequestParam("fileRef") String fileRef) {
 		// Check auth
@@ -625,7 +630,7 @@ public class MyphrplusApplication {
 	 * @param nhsNum
 	 * @return
 	 */
-	@RequestMapping(value="/getPatientFiles", method=RequestMethod.GET)
+	@RequestMapping(value="/getPatientFiles", method=RequestMethod.POST)
 	public ResponseEntity<?> getPatientFiles(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
@@ -658,53 +663,30 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getUserAttributes", method = RequestMethod.POST)
-	public ResponseEntity<?> getUserAttributes(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("uid") String uid){
+	public ResponseEntity<?> getUserAttributes(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("identifier") String identifier){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get a user: " + uid + " attributes ");
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get a user: " + identifier + " attributes ");
 		// Check user is DP
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
-			FunctionResponse attrResponse = fireBase.getUserAttributes(uid);
+			FunctionResponse attrResponse = fireBase.getUserAttributes(identifier);
 			if(attrResponse.successful()){
 				logger.info("Request from : " + authResponse.getMessage() + " to get user attributes successful");
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
-			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
-		} else {
-			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-	}
-
-
-	/**
-	 * Returns a list of patient attributes from an NHS num
-	 * @param uidToken
-	 * @param nhsNum
-	 * @return
-	 */
-	@RequestMapping(value="/getPatientAttributes", method=RequestMethod.GET)
-	public ResponseEntity<?> getPatientAttributes(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum) {
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get a patient: " + nhsNum + " attributes ");
-		// Check user is DR
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
-		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse attrResponse = fireBase.getPatientAttributes(nhsNum);
+		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse attrResponse = fireBase.getPatientAttributes(identifier);
 			if(attrResponse.successful()){
 				logger.info("Request from: " + authResponse.getMessage() + "to get patient attributes successful");
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.OK);
 			}else{
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
-		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+		}else if (roleCheck.successful() && (!roleCheck.getMessage().equals("DP") || !roleCheck.getMessage().equals("DR"))) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
 		} else {
 			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
@@ -712,12 +694,12 @@ public class MyphrplusApplication {
 	}
 
 	@RequestMapping(value="/addUserAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> addUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("uid") String uid, @RequestParam("attribute") String attribute){
+	public ResponseEntity<?> addUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add attribute " + attribute + " to user: " +uid);
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add attribute " + attribute + " to user: " +identifier);
 		if(helper.validateNewAttribute(attribute)){
 			logger.error("Invalid attribute entered");
 			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
@@ -725,41 +707,15 @@ public class MyphrplusApplication {
 		// Check user is DP
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
-			FunctionResponse addResponse = fireBase.updateUserAttributes(uid, attribute);
+			FunctionResponse addResponse = fireBase.updateUserAttributes(identifier, attribute);
 			if(addResponse.successful()){
 				logger.info("Request from: " + authResponse.getMessage() + " to add attribute successful");
 				return new ResponseEntity<>("Add successful", HttpStatus.OK);
 			}
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
-			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
-		} else {
-			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-	}
-
-	/**
-	 * Adds an attribute to firestore and updates the users private key
-	 * @param uidToken
-	 * @param nhsNum
-	 * @param attribute
-	 * @return
-	 */
-	@RequestMapping(value="/addPatientAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> addPatientAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add attribute " + attribute + " to user: " +nhsNum);
-		if(helper.validateNewAttribute(attribute)){
-			logger.error("Invalid attribute entered");
-			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
-		}
-		// Check user is DR
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		} else // Check user is DR
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse addResponse = fireBase.updatePatientAttributes(nhsNum, attribute);
+			FunctionResponse addResponse = fireBase.updatePatientAttributes(identifier, attribute);
 			if(addResponse.successful()){
 				logger.info("Add attribute request from: " + authResponse.getMessage() + " successfull");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
@@ -767,7 +723,7 @@ public class MyphrplusApplication {
 			else{
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
-		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+		} else if (roleCheck.successful() && (!roleCheck.getMessage().equals("DP") || !roleCheck.getMessage().equals("DR"))) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
 		} else {
 			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
@@ -775,12 +731,12 @@ public class MyphrplusApplication {
 	}
 
 	@RequestMapping(value="/removeUserAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> removeUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("uid") String uid, @RequestParam("attribute") String attribute){
+	public ResponseEntity<?> removeUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
 			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove attribute " + attribute + " to user: " +uid);
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove attribute " + attribute + " to user: " + identifier);
 		if(helper.validateRemoveAttribute(attribute)){
 			logger.error("Attribute not allowed to be deleted");
 			return new ResponseEntity<>("Cannot delete this attribute", HttpStatus.BAD_REQUEST);
@@ -788,41 +744,15 @@ public class MyphrplusApplication {
 		// Check user is DP
 		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
-			FunctionResponse delResponse = fireBase.removeUserAttribute(uid, attribute);
+			FunctionResponse delResponse = fireBase.removeUserAttribute(identifier, attribute);
 			if(delResponse.successful()){
 				logger.info("Remove attribute request from: " + authResponse.getMessage() + " successfull");
 				return new ResponseEntity<>("Delete successful", HttpStatus.OK);
 			}
 			return new ResponseEntity<>(delResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DP")) {
-			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
-		} else {
-			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-	}
-
-	/**
-	 * Removes an attribute from firestore and updates a users private key
-	 * @param uidToken
-	 * @param nhsNum
-	 * @param attribute
-	 * @return
-	 */
-	@RequestMapping(value="/removePatientAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> removePatientAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum, @RequestParam("attribute") String attribute){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove attribute " + attribute + " to user: " +nhsNum);
-		if(helper.validateRemoveAttribute(attribute)){
-			logger.error("Attribute not allowed to be deleted");
-			return new ResponseEntity<>("Cannot delete this attribute", HttpStatus.BAD_REQUEST);
-		}
-		// Check user is DR
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
-		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse removeResponse = fireBase.removePatientAttribute(nhsNum, attribute);
+		//Check if user is DR
+		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
+			FunctionResponse removeResponse = fireBase.removePatientAttribute(identifier, attribute);
 			if(removeResponse.successful()){
 				logger.info("Remove attribute request from: " + authResponse.getMessage() + " successfull");
 				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.OK);
@@ -830,7 +760,7 @@ public class MyphrplusApplication {
 			else{
 				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
-		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("DR")) {
+		} else if (roleCheck.successful() && (!roleCheck.getMessage().equals("DP") || !roleCheck.getMessage().equals("DR"))) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
 		} else {
 			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
@@ -842,7 +772,7 @@ public class MyphrplusApplication {
 	 * @param uidToken 
 	 * @return
 	 */
-	@RequestMapping(value="/getAllInBucket", method=RequestMethod.GET)
+	@RequestMapping(value="/getAllInBucket", method=RequestMethod.POST)
 	public ResponseEntity<?> getAllInBucket(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
@@ -874,7 +804,7 @@ public class MyphrplusApplication {
 	 * @param nhsnum
 	 * @return
 	 */
-	@RequestMapping(value="/getReminders", method=RequestMethod.GET)
+	@RequestMapping(value="/getReminders", method=RequestMethod.POST)
 	public ResponseEntity<?> getReminders(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsnum){
 		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
 		if (!authResponse.successful()) {
@@ -1000,5 +930,227 @@ public class MyphrplusApplication {
             logger.error("JSON proccessing error");
             return new ResponseEntity<>("Could not process JSON", HttpStatus.BAD_REQUEST);
         }
+	}
+
+	/**
+	 * Uploads a new diary to cloud storage, saving a reference to firestore.
+	 * Diary is encrypted between patient and doctor
+	 * @param uidToken 
+	 * @param diaryContent
+	 * @return
+	 */
+	@RequestMapping(value="/uploadDiary", method=RequestMethod.POST)
+	public ResponseEntity<?> uploadDiary(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("name") String diaryTitle, @RequestParam("content") String diaryContent){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add diary with name: " + diaryTitle);
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
+			String cleanContent = helper.cleanHtml(diaryContent);
+			String diaryDate = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).format(LocalDateTime.now()); //Get current time in nice format
+
+			User user;
+			try {
+				user = fireBase.getUserObject(authResponse.getMessage());
+			} catch (InterruptedException | ExecutionException ex) {
+				return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
+			}
+
+			String accessPolicy = "uid_" + authResponse.getMessage() + " uid_" + user.parent + " 1of2";
+
+			// Encrypt Diary
+			byte[] pubByte;
+			try {
+				pubByte = GCPSecretManager.getKeys(user.bucketName + "-public");
+			} catch (IOException e) {
+				logger.error("Could not get public key for: " + user.bucketName, e);
+				return new ResponseEntity<>("Could not get public key", HttpStatus.BAD_REQUEST);
+			}
+			BswabePub pub = SerializeUtils.unserializeBswabePub(pubByte);
+			byte[] encFile;
+			try {
+				encFile = ABE.encrypt(pub, accessPolicy, cleanContent.getBytes());
+			} catch (Exception e) {
+				logger.error("Could not encrypt diary", e);
+				return new ResponseEntity<>("Could not encrypt diary", HttpStatus.BAD_REQUEST);
+			}
+
+			// Upload object
+			String filepath = user.parent + "/" + authResponse.getMessage() + "/diaries/" + RandomStringUtils.random(20);
+			FunctionResponse uploadResponse = cloudStorage.uploadFile(user.bucketName, filepath, encFile, "text/html");
+			if (!uploadResponse.successful()) {
+				return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+
+			// Add refrence to firestore
+			Map<String, Object> diaryInfo = new HashMap<>();
+			diaryInfo.put("name", diaryTitle);
+			diaryInfo.put("date", diaryDate);
+			diaryInfo.put("ref", filepath);
+			FunctionResponse addResponse = fireBase.addDiaryRef(authResponse.getMessage(), diaryInfo);
+			if(addResponse.successful()){
+				logger.info("Add diary request from: " + authResponse.getMessage() + " successful");
+				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
+
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("Patient")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	/**
+	 * Returns a list of a patients diary entries in JSON form
+	 * @param uidToken
+	 * @param identifier
+	 * @return
+	 */
+	@RequestMapping(value="/getDiaries", method=RequestMethod.POST)
+	public ResponseEntity<?> getDiaries(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam(name="identifier", required = false) String identifier){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add get diaries list " + identifier);
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
+			FunctionResponse getResponse = fireBase.getDiaries(authResponse.getMessage());
+			if(getResponse.successful()){
+				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")){
+			String uid = fireBase.getUIDfromNHSnum(identifier);
+			FunctionResponse getResponse = fireBase.getDiaries(uid);
+			if(getResponse.successful()){
+				logger.info("Get diaries request from: " + authResponse.getMessage() + " successful");
+				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
+			}
+			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		} else if (roleCheck.successful() && (!roleCheck.getMessage().equals("Patient") || !roleCheck.getMessage().equals("DR"))) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	/**
+	 * Returns the HTML content of the requested diary 
+	 * @param uidToken 
+	 * @param diaryRef
+	 * @param identifier
+	 * @return
+	 */
+	@RequestMapping(value="/getDiary", method=RequestMethod.POST)
+	public ResponseEntity<?> getDiary(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("ref") String diaryRef, @RequestParam(name="identifier", required = false) String identifier){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add get diary :" + identifier + "/" + diaryRef);
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && (roleCheck.getMessage().equals("Patient") || roleCheck.getMessage().equals("DR"))) {
+			String location = null;
+			if(roleCheck.getMessage().equals("Patient")){
+				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, authResponse.getMessage());
+				if(!getResponse.successful()){
+					return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
+				}
+				location = getResponse.getMessage();
+			} else if (roleCheck.getMessage().equals("DR")){
+				String uid = fireBase.getUIDfromNHSnum(identifier);
+				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, uid);
+				if(!getResponse.successful()){
+					return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
+				}
+				location = getResponse.getMessage();
+			}
+			User user;
+			try {
+				user = fireBase.getUserObject(authResponse.getMessage());
+			} catch (InterruptedException | ExecutionException ex) {
+				return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
+			}
+
+			ByteArrayResource file = cloudStorage.downloadObject(user.bucketName, location);
+
+			byte[] pubByte;
+			byte[] prvByte;
+			try {
+				pubByte = GCPSecretManager.getKeys(user.bucketName + "-public");
+				prvByte = GCPSecretManager.getKeys(authResponse.getMessage());
+			} catch (IOException ex) {
+				return new ResponseEntity<>("Couldn't retrive keys", HttpStatus.BAD_REQUEST);
+			}
+			BswabePub pub = SerializeUtils.unserializeBswabePub(pubByte);
+			BswabePrv prv = SerializeUtils.unserializeBswabePrv(pub, prvByte);
+			byte[] decFile;
+			try {
+				decFile = ABE.decrypt(pub, prv, file.getInputStream());
+			} catch (Exception e) {
+				logger.error("File couldn't be decrytped", e);
+				return new ResponseEntity<>("File could not be decrypted, May not have correct attributes",
+						HttpStatus.BAD_REQUEST);
+			}
+
+			String html = new String(decFile, StandardCharsets.UTF_8);
+			return new ResponseEntity<>(html, HttpStatus.OK);
+		} else if (roleCheck.successful() && (!roleCheck.getMessage().equals("Patient") || !roleCheck.getMessage().equals("DR"))) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	/**
+	 * Deletes a diary from firestore and cloud storage
+	 * @param uidToken
+	 * @param diaryRef
+	 * @param identifier
+	 * @return
+	 */
+	@RequestMapping(value="/deleteDiary", method=RequestMethod.POST)
+	public ResponseEntity<?> deleteDiary(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("ref") String diaryRef){
+		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
+		if (!authResponse.successful()) {
+			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+		}
+		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add get diary: " + diaryRef);
+		//Check role
+		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		if (roleCheck.successful() && (roleCheck.getMessage().equals("Patient"))){
+			FunctionResponse getLocResponse = fireBase.getDiaryFilelocation(diaryRef, authResponse.getMessage());
+			if(!getLocResponse.successful()){
+				return new ResponseEntity<>(getLocResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+			FunctionResponse deleteFBResponse = fireBase.deleteDiary(authResponse.getMessage(), diaryRef);
+			if(!deleteFBResponse.successful()){
+				return new ResponseEntity<>(deleteFBResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			}
+			User user;
+			try {
+				user = fireBase.getUserObject(authResponse.getMessage());
+			} catch (InterruptedException | ExecutionException e) {
+				logger.error("Couldn't get user:"+ authResponse.getMessage() + " object", e);
+				return new ResponseEntity<>("Failed to get user object", HttpStatus.BAD_REQUEST);
+			}
+			Boolean delete = cloudStorage.deleteFile(user.bucketName, getLocResponse.getMessage());
+			if(delete){
+				logger.info("Request to delete diary: " + diaryRef + " successful, diary deleted from cloud storage");
+				return new ResponseEntity<>("Delete successfull", HttpStatus.OK);
+			}
+			return new ResponseEntity<>("Delete unsuccessfull", HttpStatus.BAD_REQUEST);
+		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("Patient")) {
+			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
+		} else {
+			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
+		}
 	}
 }

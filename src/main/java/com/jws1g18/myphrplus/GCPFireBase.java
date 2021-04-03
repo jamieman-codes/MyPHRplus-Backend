@@ -1106,7 +1106,7 @@ public class GCPFireBase {
      * @param nhsNum NHS num of user
      * @return User ID
      */
-    private String getUIDfromNHSnum(String nhsNum){
+    public String getUIDfromNHSnum(String nhsNum){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
         try {
@@ -1124,5 +1124,82 @@ public class GCPFireBase {
            return null;
        }
        return uid;
+    }
+
+    /**
+     * Adds a diary reference to firestore
+     * @param uid
+     * @param ref
+     * @return
+     */
+    public FunctionResponse addDiaryRef(String uid, Map<String, Object> ref){
+        try {
+            this.db.collection("users").document(uid).collection("diaryEntries").add(ref).get();
+            return new FunctionResponse(true, "Add successful");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Couldn't add diary reference", e);
+            return new FunctionResponse(false, "Add failed");
+        }
+    }
+
+    /**
+     * Returns a json of diaries of the patient specified
+     * @param uid
+     * @return
+     */
+    public FunctionResponse getDiaries(String uid){
+        QuerySnapshot qs;
+        try {
+            qs = this.db.collection("users").document(uid).collection("diaryEntries").get().get();
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user: " + uid + " diary entries");
+            return new FunctionResponse(false, "Could not find diary entries");
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+        for(QueryDocumentSnapshot doc: qs.getDocuments()){
+            ObjectNode objectNode = arrayNode.addObject();
+            objectNode.put("name", doc.getString("name"));
+            objectNode.put("date", doc.getString("date"));
+            objectNode.put("ref", doc.getId());
+        }
+        try {
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            logger.error("Couldn't proccess JSON", e);
+            return new FunctionResponse(false, "Couldn't process JSON");
+        }
+    }
+
+    /**
+     * Returns the cloud storage location of diary
+     * @param diaryRef
+     * @param uid
+     * @return
+     */
+    public FunctionResponse getDiaryFilelocation(String diaryRef, String uid){
+        try {
+            DocumentSnapshot ds = this.db.collection("users").document(uid).collection("diaryEntries").document(diaryRef).get().get();
+            return new FunctionResponse(true, ds.getString("ref"));
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get diary location for user: " + uid + " diary: " +diaryRef, e);
+            return new FunctionResponse(false, "Could not find diary");
+        }
+    }
+
+    /**
+     * Deletes a diary reference from firestore
+     * @param uid
+     * @param diaryRef
+     * @return
+     */
+    public FunctionResponse deleteDiary(String uid, String diaryRef){
+        try {
+            this.db.collection("users").document(uid).collection("diaryEntries").document(diaryRef).delete().get();
+            return new FunctionResponse(true, "Delete successful");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not delete diary location for user: " + uid + " diary: " +diaryRef, e);
+            return new FunctionResponse(false, "Could not delete diary");
+        }
     }
 }
