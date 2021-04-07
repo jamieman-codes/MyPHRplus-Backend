@@ -1,7 +1,6 @@
 package com.jws1g18.myphrplus;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -23,7 +22,6 @@ import com.google.firebase.auth.UserRecord;
 import com.jws1g18.myphrplus.DTOS.User;
 
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.http.client.utils.Idn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -32,6 +30,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -67,11 +66,8 @@ public class MyphrplusApplication {
 	@RequestMapping(method = RequestMethod.POST, path = "/registerPatient")
 	public ResponseEntity<?> registerPatient(@RequestBody User patient) {
 		logger.info("Incoming request to register Patient: " + patient.email);
-		// Check authentication
-		FunctionResponse authResponse = fireBase.verifyUidToken(patient.uid);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+
 		// Check NHS Num
 		if(!fireBase.checkNHSnum(patient.nhsnum)){
 			return new ResponseEntity<>("NHS Number has already been registered", HttpStatus.BAD_REQUEST);
@@ -80,18 +76,18 @@ public class MyphrplusApplication {
 
 		// Create Attribute array
 		ArrayList<String> attributes = new ArrayList<>();
-		attributes.add("uid_" + authResponse.getMessage());
+		attributes.add("uid_" + uid);
 		attributes.add("Patient");
 		attributes.add("nhsNum_" + patient.nhsnum);
 
 		// Add patient to firestore
-		FunctionResponse addResponse = fireBase.addPatient(authResponse.getMessage(), patient, attributes);
+		FunctionResponse addResponse = fireBase.addPatient(uid, patient, attributes);
 		if (!addResponse.successful()) {
 			return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		}
 
 		FunctionResponse keyResponse = helper.genAndStorePrivKeys(addResponse.getMessage(),
-				attributes.toArray(new String[0]), authResponse.getMessage());
+				attributes.toArray(new String[0]), uid);
 		if (keyResponse.successful()) {
 			logger.info("Patient successfully created: " + patient.email);
 			return new ResponseEntity<>("Patient created successfully", HttpStatus.OK);
@@ -106,17 +102,14 @@ public class MyphrplusApplication {
 	 * @return Returns HTTP response code and user information
 	 */
 	@RequestMapping(method = RequestMethod.GET, path = "/getUser")
-	public ResponseEntity<?> getUser(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
-		// Check authentication
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request to get User info for user: " + authResponse.getMessage());
+	public ResponseEntity<?> getUser() {
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+
+		logger.info("Authenticated request to get User info for user: " + uid);
 		// Get user information
-		FunctionResponse getResponse = fireBase.getUser(authResponse.getMessage());
+		FunctionResponse getResponse = fireBase.getUser(uid);
 		if (getResponse.successful()) {
-			logger.info("User info request for user: "+ authResponse.getMessage() + " was successfull");
+			logger.info("User info request for user: "+ uid + " was successfull");
 			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
 		} else {
 			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -130,17 +123,14 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(method = RequestMethod.GET, path = "/deleteUser")
-	public ResponseEntity<?> deleteUser(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
-		// Check authentication
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request to delete user: " + authResponse.getMessage());
+	public ResponseEntity<?> deleteUser() {
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		
+		logger.info("Authenticated request to delete user: " + uid);
 		// Get user object
 		User user;
 		try {
-			user = fireBase.getUserObject(authResponse.getMessage());
+			user = fireBase.getUserObject(uid);
 		} catch (InterruptedException | ExecutionException e) {
 			logger.error("Couldn't get user object", e);
 			return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
@@ -152,7 +142,7 @@ public class MyphrplusApplication {
 
 		// Delete files
 		for(String fileRef: user.files){
-			FunctionResponse deleteResponse = fireBase.deleteFile(authResponse.getMessage(), fileRef);
+			FunctionResponse deleteResponse = fireBase.deleteFile(uid, fileRef);
 			if(deleteResponse.successful() && !deleteResponse.getMessage().equals("No delete needed")){
 				Boolean delete = cloudStorage.deleteFile(user.bucketName, deleteResponse.getMessage());
 				if(delete){
@@ -167,9 +157,9 @@ public class MyphrplusApplication {
 		}
 
 		// Delete user
-		FunctionResponse deleteResponse = fireBase.deleteUser(authResponse.getMessage());
+		FunctionResponse deleteResponse = fireBase.deleteUser(uid);
 		if (deleteResponse.successful()) {
-			logger.info("User: " + authResponse.getMessage() + " successfully deleted");
+			logger.info("User: " + uid + " successfully deleted");
 			return new ResponseEntity<>(deleteResponse.getMessage(), HttpStatus.OK);
 		} else {
 			return new ResponseEntity<>(deleteResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -184,34 +174,31 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/uploadFilePatient", method = RequestMethod.POST, consumes = { "multipart/form-data" })
-	public ResponseEntity<?> uploadFilePatient(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
+	public ResponseEntity<?> uploadFilePatient(
 			@RequestParam(name = "file") MultipartFile file, @RequestParam(name = "name") String name,
 			@RequestParam(name = "customAccessPolicy") String customAccessPolicy,
 			@RequestParam(name = "accessPolicy") ArrayList<String> accessPolicy) {
 		// Check auth token
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from user: " + authResponse.getMessage() + " to upload file with name: " + name);
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from user: " + uid + " to upload file with name: " + name);
 
 		// Check user role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
 			// Get Patient object
 			User user;
 			try {
-				user = fireBase.getUserObject(authResponse.getMessage());
+				user = fireBase.getUserObject(uid);
 			} catch (InterruptedException | ExecutionException ex) {
 				logger.error("Get patient failed", ex);
 				return new ResponseEntity<>("Get patient object failed", HttpStatus.BAD_REQUEST);
 			}
 
-			ArrayList<String> uids = fireBase.getUids(accessPolicy, customAccessPolicy, authResponse.getMessage(),
+			ArrayList<String> uids = fireBase.getUids(accessPolicy, customAccessPolicy, uid,
 					user);
 			String accessPolicyStr = helper.parsePatientPolicy(accessPolicy, customAccessPolicy, uids);
 
-			return uploadFile(authResponse.getMessage(), file, accessPolicyStr, name, uids);
+			return uploadFile(uid, file, accessPolicyStr, name, uids);
 
 		} else if (roleCheck.successful() && !roleCheck.getMessage().equals("Patient")) {
 			return new ResponseEntity<>("You do not have the correct permissions", HttpStatus.BAD_REQUEST);
@@ -224,22 +211,19 @@ public class MyphrplusApplication {
 	 * Handles uploading a file for DRs and DPs
 	 */
 	@RequestMapping(value = "/uploadFile", method = RequestMethod.POST, consumes = { "multipart/form-data" })
-	public ResponseEntity<?> uploadFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
+	public ResponseEntity<?> uploadFile(
 		@RequestParam(name = "file") MultipartFile file, @RequestParam(name = "name") String name,
 		@RequestParam(name = "accessPolicy") String accessPolicy,
 		@RequestParam(name = "users") List<String> users){
 		// Check auth token
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from user: " + authResponse.getMessage() + " to upload file with name: " + name);
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from user: " + uid + " to upload file with name: " + name);
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && (roleCheck.getMessage().equals("DR") || roleCheck.getMessage().equals("DP"))) {
 			//Get patients
 			ArrayList<String> uids = new ArrayList<>();
 			if(roleCheck.getMessage().equals("DR")){
-				uids.add(authResponse.getMessage());
+				uids.add(uid);
 				for(String user: users){
 					QuerySnapshot qs;
 					try {
@@ -256,7 +240,7 @@ public class MyphrplusApplication {
 				uids = new ArrayList<>(users);
 			}
 
-			return uploadFile(authResponse.getMessage(), file, accessPolicy, name, uids);
+			return uploadFile(uid, file, accessPolicy, name, uids);
 		} else {
 			return new ResponseEntity<>("You do not have correct permissions", HttpStatus.BAD_REQUEST);
 		}
@@ -343,13 +327,10 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/deleteFile", method = RequestMethod.POST)
-	public ResponseEntity<?> deleteFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam(name = "fileRef") String fileRef){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from user: " + authResponse.getMessage() + " to delete file: " + fileRef);
-		FunctionResponse deleteResponse = fireBase.deleteFile(authResponse.getMessage(), fileRef);
+	public ResponseEntity<?> deleteFile( @RequestParam(name = "fileRef") String fileRef){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from user: " + uid + " to delete file: " + fileRef);
+		FunctionResponse deleteResponse = fireBase.deleteFile(uid, fileRef);
 		if(deleteResponse.successful()){
 			if(deleteResponse.getMessage().equals("No delete needed")){
 				logger.info("Request to delete file: " + fileRef + " successful");
@@ -358,9 +339,9 @@ public class MyphrplusApplication {
 			else{
 				User user;
 				try {
-					user = fireBase.getUserObject(authResponse.getMessage());
+					user = fireBase.getUserObject(uid);
 				} catch (InterruptedException | ExecutionException e) {
-					logger.error("Couldn't get user:"+ authResponse.getMessage() + " object", e);
+					logger.error("Couldn't get user:"+ uid + " object", e);
 					return new ResponseEntity<>("Failed to get user object", HttpStatus.BAD_REQUEST);
 				}
 				Boolean delete = cloudStorage.deleteFile(user.bucketName, deleteResponse.getMessage());
@@ -383,11 +364,8 @@ public class MyphrplusApplication {
 	 */
 	@RequestMapping(value = "/getUserRole", method = RequestMethod.GET)
 	public ResponseEntity<?> getUserRole(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		FunctionResponse getResponse = fireBase.getRole(authResponse.getMessage());
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		FunctionResponse getResponse = fireBase.getRole(uid);
 		if (getResponse.successful()) {
 			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
 		} else {
@@ -402,14 +380,11 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/newDP", method = RequestMethod.POST)
-	public ResponseEntity<?> newDP(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user) {
+	public ResponseEntity<?> newDP( @RequestBody User user) {
 		logger.info("Incoming request to add DP with name:" +user.name);
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
 		// Check user is admin
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("admin")) {
 			UserRecord userRecord;
 			try {
@@ -472,14 +447,11 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/newDR", method = RequestMethod.POST)
-	public ResponseEntity<?> newDR(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestBody User user) {
+	public ResponseEntity<?> newDR( @RequestBody User user) {
 		logger.info("Incoming request to add DR with name" + user.name);
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
 		// Check user is DP
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
 			// Make user with firebase
 			UserRecord userRecord;
@@ -494,7 +466,7 @@ public class MyphrplusApplication {
 			attributes.add("uid_" + userRecord.getUid());
 			attributes.add("DR");
 
-			FunctionResponse addResponse = fireBase.addDR(user, authResponse.getMessage(), attributes, userRecord);
+			FunctionResponse addResponse = fireBase.addDR(user, uid, attributes, userRecord);
 			if (!addResponse.successful()) {
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
@@ -521,11 +493,8 @@ public class MyphrplusApplication {
 	 */
 	@RequestMapping(value = "/getFiles", method = RequestMethod.GET)
 	public ResponseEntity<?> getFiles(@RequestHeader("Xx-Firebase-Id-Token") String uidToken) {
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		FunctionResponse fileResponse = fireBase.getFiles(authResponse.getMessage());
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		FunctionResponse fileResponse = fireBase.getFiles(uid);
 		if (fileResponse.successful()) {
 			return new ResponseEntity<>(fileResponse.getMessage(), HttpStatus.OK);
 		} else {
@@ -540,14 +509,11 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value = "/downloadFile", method = RequestMethod.POST)
-	public ResponseEntity<?> downloadFile(@RequestHeader("Xx-Firebase-Id-Token") String uidToken,
+	public ResponseEntity<?> downloadFile(
 			@RequestParam("fileRef") String fileRef) {
 		// Check auth
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to download file " + fileRef);
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to download file " + fileRef);
 		// Get file path + type
 		FunctionResponse fileResponse = fireBase.getFilePath(fileRef);
 		if (!fileResponse.successful()) {
@@ -558,7 +524,7 @@ public class MyphrplusApplication {
 
 		User user;
 		try {
-			user = fireBase.getUserObject(authResponse.getMessage());
+			user = fireBase.getUserObject(uid);
 		} catch (InterruptedException | ExecutionException ex) {
 			return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
 		}
@@ -571,7 +537,7 @@ public class MyphrplusApplication {
 		byte[] prvByte;
 		try {
 			pubByte = GCPSecretManager.getKeys(bucketName + "-public");
-			prvByte = GCPSecretManager.getKeys(authResponse.getMessage());
+			prvByte = GCPSecretManager.getKeys(uid);
 		} catch (IOException ex) {
 			return new ResponseEntity<>("Couldn't retrive keys", HttpStatus.BAD_REQUEST);
 		}
@@ -611,14 +577,11 @@ public class MyphrplusApplication {
 	 */
 	@RequestMapping(value="/getPatients", method=RequestMethod.GET)
 	public ResponseEntity<?> getPatients(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from user: " + authResponse.getMessage() + " to get list of patients");
-		FunctionResponse pResponse = fireBase.getAllPatients(authResponse.getMessage());
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from user: " + uid + " to get list of patients");
+		FunctionResponse pResponse = fireBase.getAllPatients(uid);
 		if(pResponse.successful()){
-			logger.info("Get patients request from " + authResponse.getMessage() + " successfull");
+			logger.info("Get patients request from " + uid + " successfull");
 			return new ResponseEntity<>(pResponse.getMessage(), HttpStatus.OK);
 		}
 		return new ResponseEntity<>(pResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -631,17 +594,14 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getPatientFiles", method=RequestMethod.POST)
-	public ResponseEntity<?> getPatientFiles(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsNum){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from user: " +authResponse.getMessage() + " to get patient: " +nhsNum + " (nhsnum) files");
+	public ResponseEntity<?> getPatientFiles( @RequestParam("nhsNum") String nhsNum){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from user: " +uid + " to get patient: " +nhsNum + " (nhsnum) files");
 		// Check user is DR
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			//Get patient files
-			FunctionResponse fileResponse = fireBase.getPatientFiles(nhsNum, authResponse.getMessage());
+			FunctionResponse fileResponse = fireBase.getPatientFiles(nhsNum, uid);
 			if(fileResponse.successful()){
 				logger.info("Request to get user: " + nhsNum + " files successful");
 				return new ResponseEntity<>(fileResponse.getMessage(), HttpStatus.OK);
@@ -663,25 +623,22 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getUserAttributes", method = RequestMethod.POST)
-	public ResponseEntity<?> getUserAttributes(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("identifier") String identifier){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get a user: " + identifier + " attributes ");
+	public ResponseEntity<?> getUserAttributes( @RequestParam("identifier") String identifier){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to get a user: " + identifier + " attributes ");
 		// Check user is DP
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
 			FunctionResponse attrResponse = fireBase.getUserAttributes(identifier);
 			if(attrResponse.successful()){
-				logger.info("Request from : " + authResponse.getMessage() + " to get user attributes successful");
+				logger.info("Request from : " + uid + " to get user attributes successful");
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			FunctionResponse attrResponse = fireBase.getPatientAttributes(identifier);
 			if(attrResponse.successful()){
-				logger.info("Request from: " + authResponse.getMessage() + "to get patient attributes successful");
+				logger.info("Request from: " + uid + "to get patient attributes successful");
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.OK);
 			}else{
 				return new ResponseEntity<>(attrResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -694,30 +651,27 @@ public class MyphrplusApplication {
 	}
 
 	@RequestMapping(value="/addUserAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> addUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add attribute " + attribute + " to user: " +identifier);
+	public ResponseEntity<?> addUserAttribute( @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to add attribute " + attribute + " to user: " +identifier);
 		if(helper.validateNewAttribute(attribute)){
 			logger.error("Invalid attribute entered");
 			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
 		}
 		// Check user is DP
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
 			FunctionResponse addResponse = fireBase.updateUserAttributes(identifier, attribute);
 			if(addResponse.successful()){
-				logger.info("Request from: " + authResponse.getMessage() + " to add attribute successful");
+				logger.info("Request from: " + uid + " to add attribute successful");
 				return new ResponseEntity<>("Add successful", HttpStatus.OK);
 			}
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
+			return new ResponseEntity<>(uid, HttpStatus.BAD_REQUEST);
 		} else // Check user is DR
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			FunctionResponse addResponse = fireBase.updatePatientAttributes(identifier, attribute);
 			if(addResponse.successful()){
-				logger.info("Add attribute request from: " + authResponse.getMessage() + " successfull");
+				logger.info("Add attribute request from: " + uid + " successfull");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
 			}
 			else{
@@ -731,22 +685,19 @@ public class MyphrplusApplication {
 	}
 
 	@RequestMapping(value="/removeUserAttribute", method=RequestMethod.POST)
-	public ResponseEntity<?> removeUserAttribute(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove attribute " + attribute + " to user: " + identifier);
+	public ResponseEntity<?> removeUserAttribute( @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to remove attribute " + attribute + " to user: " + identifier);
 		if(helper.validateRemoveAttribute(attribute)){
 			logger.error("Attribute not allowed to be deleted");
 			return new ResponseEntity<>("Cannot delete this attribute", HttpStatus.BAD_REQUEST);
 		}
 		// Check user is DP
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
 			FunctionResponse delResponse = fireBase.removeUserAttribute(identifier, attribute);
 			if(delResponse.successful()){
-				logger.info("Remove attribute request from: " + authResponse.getMessage() + " successfull");
+				logger.info("Remove attribute request from: " + uid + " successfull");
 				return new ResponseEntity<>("Delete successful", HttpStatus.OK);
 			}
 			return new ResponseEntity<>(delResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -754,7 +705,7 @@ public class MyphrplusApplication {
 		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			FunctionResponse removeResponse = fireBase.removePatientAttribute(identifier, attribute);
 			if(removeResponse.successful()){
-				logger.info("Remove attribute request from: " + authResponse.getMessage() + " successfull");
+				logger.info("Remove attribute request from: " + uid + " successfull");
 				return new ResponseEntity<>(removeResponse.getMessage(), HttpStatus.OK);
 			}
 			else{
@@ -774,17 +725,14 @@ public class MyphrplusApplication {
 	 */
 	@RequestMapping(value="/getAllInBucket", method=RequestMethod.POST)
 	public ResponseEntity<?> getAllInBucket(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get all users in bucket");
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to get all users in bucket");
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DP")) {
-			FunctionResponse getResponse = fireBase.getAllInBucket(authResponse.getMessage());
+			FunctionResponse getResponse = fireBase.getAllInBucket(uid);
 			if(getResponse.successful()){
-				logger.info("Request from " + authResponse.getMessage() + " to get all users in bucket successful");
+				logger.info("Request from " + uid + " to get all users in bucket successful");
 				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
 			}
 			else{
@@ -805,14 +753,11 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getReminders", method=RequestMethod.POST)
-	public ResponseEntity<?> getReminders(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsnum){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get reminders ");
+	public ResponseEntity<?> getReminders( @RequestParam("nhsNum") String nhsnum){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to get reminders ");
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			FunctionResponse reminderResponse = fireBase.getPatientReminders(nhsnum);
 			if(reminderResponse.successful()){
@@ -821,7 +766,7 @@ public class MyphrplusApplication {
 			}
 			return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		} else if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
-			FunctionResponse reminderResponse = fireBase.getReminders(authResponse.getMessage());
+			FunctionResponse reminderResponse = fireBase.getReminders(uid);
 			if(reminderResponse.successful()){
 				logger.info("Get reminder request successful");
 				return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.OK);
@@ -840,18 +785,15 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/addReminder", method=RequestMethod.POST)
-	public ResponseEntity<?> addReminder(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("nhsNum") String nhsnum, @RequestParam("reminder") String reminder){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add reminder: " + reminder + " to: " + nhsnum);
+	public ResponseEntity<?> addReminder( @RequestParam("nhsNum") String nhsnum, @RequestParam("reminder") String reminder){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to add reminder: " + reminder + " to: " + nhsnum);
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
 			FunctionResponse addResponse = fireBase.addReminder(nhsnum, reminder);
 			if(addResponse.successful()){
-				logger.info("Add request from: " + authResponse.getMessage() + " was successful");
+				logger.info("Add request from: " + uid + " was successful");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -864,13 +806,10 @@ public class MyphrplusApplication {
 	}
 
 	@RequestMapping(value="/removeReminder", method=RequestMethod.POST)
-	public ResponseEntity<?> removeReminder(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("reminder") String reminder){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to remove reminder: " + reminder);
-		FunctionResponse removeResponse = fireBase.removeReminder(authResponse.getMessage(), reminder);
+	public ResponseEntity<?> removeReminder( @RequestParam("reminder") String reminder){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to remove reminder: " + reminder);
+		FunctionResponse removeResponse = fireBase.removeReminder(uid, reminder);
 		if(removeResponse.successful()){
 			logger.info("Reminder successfully removed");
 			return new ResponseEntity<>("Delete successful", HttpStatus.OK);
@@ -884,15 +823,13 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getDashboardInfo", method=RequestMethod.GET)
-	public ResponseEntity<?> getDashboardInfo(@RequestHeader("Xx-Firebase-Id-Token") String uidToken){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to get dashboard information");
+	public ResponseEntity<?> getDashboardInfo(){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+	
+		logger.info("Authenticated request from: " + uid + " to get dashboard information");
 		User user;
         try {
-            user = fireBase.getUserObject(authResponse.getMessage());
+            user = fireBase.getUserObject(uid);
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Could not get user", e);
             return new ResponseEntity<>("Could not get user", HttpStatus.BAD_REQUEST);
@@ -924,7 +861,7 @@ public class MyphrplusApplication {
             return new ResponseEntity<>("Invalid role, contact System Admin", HttpStatus.BAD_REQUEST);
         }
         try {
-			logger.info("Dashboard information request from: " + authResponse.getMessage() + " successful");
+			logger.info("Dashboard information request from: " + uid + " successful");
             return new ResponseEntity<>(mapper.writer().writeValueAsString(objectNode), HttpStatus.OK);
         } catch (JsonProcessingException e) {
             logger.error("JSON proccessing error");
@@ -940,26 +877,23 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/uploadDiary", method=RequestMethod.POST)
-	public ResponseEntity<?> uploadDiary(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("name") String diaryTitle, @RequestParam("content") String diaryContent){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add diary with name: " + diaryTitle);
+	public ResponseEntity<?> uploadDiary( @RequestParam("name") String diaryTitle, @RequestParam("content") String diaryContent){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to add diary with name: " + diaryTitle);
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
 			String cleanContent = helper.cleanHtml(diaryContent);
 			String diaryDate = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).format(LocalDateTime.now()); //Get current time in nice format
 
 			User user;
 			try {
-				user = fireBase.getUserObject(authResponse.getMessage());
+				user = fireBase.getUserObject(uid);
 			} catch (InterruptedException | ExecutionException ex) {
 				return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
 			}
 
-			String accessPolicy = "uid_" + authResponse.getMessage() + " uid_" + user.parent + " 1of2";
+			String accessPolicy = "uid_" + uid + " uid_" + user.parent + " 1of2";
 
 			// Encrypt Diary
 			byte[] pubByte;
@@ -979,7 +913,7 @@ public class MyphrplusApplication {
 			}
 
 			// Upload object
-			String filepath = user.parent + "/" + authResponse.getMessage() + "/diaries/" + RandomStringUtils.random(20);
+			String filepath = user.parent + "/" + uid + "/diaries/" + RandomStringUtils.random(20);
 			FunctionResponse uploadResponse = cloudStorage.uploadFile(user.bucketName, filepath, encFile, "text/html");
 			if (!uploadResponse.successful()) {
 				return new ResponseEntity<>(uploadResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -990,9 +924,9 @@ public class MyphrplusApplication {
 			diaryInfo.put("name", diaryTitle);
 			diaryInfo.put("date", diaryDate);
 			diaryInfo.put("ref", filepath);
-			FunctionResponse addResponse = fireBase.addDiaryRef(authResponse.getMessage(), diaryInfo);
+			FunctionResponse addResponse = fireBase.addDiaryRef(uid, diaryInfo);
 			if(addResponse.successful()){
-				logger.info("Add diary request from: " + authResponse.getMessage() + " successful");
+				logger.info("Add diary request from: " + uid + " successful");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -1011,25 +945,22 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getDiaries", method=RequestMethod.POST)
-	public ResponseEntity<?> getDiaries(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam(name="identifier", required = false) String identifier){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add get diaries list " + identifier);
+	public ResponseEntity<?> getDiaries( @RequestParam(name="identifier", required = false) String identifier){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to add get diaries list " + identifier);
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
-			FunctionResponse getResponse = fireBase.getDiaries(authResponse.getMessage());
+			FunctionResponse getResponse = fireBase.getDiaries(uid);
 			if(getResponse.successful()){
 				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")){
-			String uid = fireBase.getUIDfromNHSnum(identifier);
-			FunctionResponse getResponse = fireBase.getDiaries(uid);
+			String patientUid = fireBase.getUIDfromNHSnum(identifier);
+			FunctionResponse getResponse = fireBase.getDiaries(patientUid);
 			if(getResponse.successful()){
-				logger.info("Get diaries request from: " + authResponse.getMessage() + " successful");
+				logger.info("Get diaries request from: " + uid + " successful");
 				return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.OK);
 			}
 			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
@@ -1048,25 +979,22 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/getDiary", method=RequestMethod.POST)
-	public ResponseEntity<?> getDiary(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("ref") String diaryRef, @RequestParam(name="identifier", required = false) String identifier){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add get diary :" + identifier + "/" + diaryRef);
+	public ResponseEntity<?> getDiary( @RequestParam("ref") String diaryRef, @RequestParam(name="identifier", required = false) String identifier){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to add get diary :" + identifier + "/" + diaryRef);
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && (roleCheck.getMessage().equals("Patient") || roleCheck.getMessage().equals("DR"))) {
 			String location = null;
 			if(roleCheck.getMessage().equals("Patient")){
-				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, authResponse.getMessage());
+				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, uid);
 				if(!getResponse.successful()){
 					return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
 				}
 				location = getResponse.getMessage();
 			} else if (roleCheck.getMessage().equals("DR")){
-				String uid = fireBase.getUIDfromNHSnum(identifier);
-				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, uid);
+				String patientUid = fireBase.getUIDfromNHSnum(identifier);
+				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, patientUid);
 				if(!getResponse.successful()){
 					return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
 				}
@@ -1074,7 +1002,7 @@ public class MyphrplusApplication {
 			}
 			User user;
 			try {
-				user = fireBase.getUserObject(authResponse.getMessage());
+				user = fireBase.getUserObject(uid);
 			} catch (InterruptedException | ExecutionException ex) {
 				return new ResponseEntity<>("Couldn't get user object", HttpStatus.BAD_REQUEST);
 			}
@@ -1085,7 +1013,7 @@ public class MyphrplusApplication {
 			byte[] prvByte;
 			try {
 				pubByte = GCPSecretManager.getKeys(user.bucketName + "-public");
-				prvByte = GCPSecretManager.getKeys(authResponse.getMessage());
+				prvByte = GCPSecretManager.getKeys(uid);
 			} catch (IOException ex) {
 				return new ResponseEntity<>("Couldn't retrive keys", HttpStatus.BAD_REQUEST);
 			}
@@ -1117,28 +1045,25 @@ public class MyphrplusApplication {
 	 * @return
 	 */
 	@RequestMapping(value="/deleteDiary", method=RequestMethod.POST)
-	public ResponseEntity<?> deleteDiary(@RequestHeader("Xx-Firebase-Id-Token") String uidToken, @RequestParam("ref") String diaryRef){
-		FunctionResponse authResponse = fireBase.verifyUidToken(uidToken);
-		if (!authResponse.successful()) {
-			return new ResponseEntity<>(authResponse.getMessage(), HttpStatus.BAD_REQUEST);
-		}
-		logger.info("Authenticated request from: " + authResponse.getMessage() + " to add get diary: " + diaryRef);
+	public ResponseEntity<?> deleteDiary( @RequestParam("ref") String diaryRef){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from: " + uid + " to add get diary: " + diaryRef);
 		//Check role
-		FunctionResponse roleCheck = fireBase.getRole(authResponse.getMessage());
+		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && (roleCheck.getMessage().equals("Patient"))){
-			FunctionResponse getLocResponse = fireBase.getDiaryFilelocation(diaryRef, authResponse.getMessage());
+			FunctionResponse getLocResponse = fireBase.getDiaryFilelocation(diaryRef, uid);
 			if(!getLocResponse.successful()){
 				return new ResponseEntity<>(getLocResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
-			FunctionResponse deleteFBResponse = fireBase.deleteDiary(authResponse.getMessage(), diaryRef);
+			FunctionResponse deleteFBResponse = fireBase.deleteDiary(uid, diaryRef);
 			if(!deleteFBResponse.successful()){
 				return new ResponseEntity<>(deleteFBResponse.getMessage(), HttpStatus.BAD_REQUEST);
 			}
 			User user;
 			try {
-				user = fireBase.getUserObject(authResponse.getMessage());
+				user = fireBase.getUserObject(uid);
 			} catch (InterruptedException | ExecutionException e) {
-				logger.error("Couldn't get user:"+ authResponse.getMessage() + " object", e);
+				logger.error("Couldn't get user:"+ uid + " object", e);
 				return new ResponseEntity<>("Failed to get user object", HttpStatus.BAD_REQUEST);
 			}
 			Boolean delete = cloudStorage.deleteFile(user.bucketName, getLocResponse.getMessage());
