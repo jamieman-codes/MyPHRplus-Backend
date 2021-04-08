@@ -18,8 +18,9 @@ import com.google.firebase.auth.FirebaseAuth;
 @Component
 public class FirebaseTokenFilter extends OncePerRequestFilter{
 
-
-
+    /**
+     * Checks if the firebase header is present, if so check the token, if token is valid add to security context 
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -31,10 +32,14 @@ public class FirebaseTokenFilter extends OncePerRequestFilter{
                 SecurityContextHolder.getContext().setAuthentication(auth);
             }
         }
-
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Parses a Firebase token and retrives the User ID
+     * @param idToken
+     * @return
+     */
     private String parseToken(String idToken) {
 		try {
 			return  FirebaseAuth.getInstance().verifyIdToken(idToken).getUid();

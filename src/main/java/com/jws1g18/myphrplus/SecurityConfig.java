@@ -29,8 +29,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Override
     protected void configure(HttpSecurity security) throws Exception {
         security.cors().and().csrf().disable().httpBasic().disable()
-        .authorizeRequests().antMatchers("/registerPatient", "/getAllDPs").permitAll()
-        .anyRequest().fullyAuthenticated().and().addFilterBefore(fireBaseTokenFilter, BasicAuthenticationFilter.class)
+        .authorizeRequests().antMatchers("/registerPatient", "/getAllDPs").permitAll() //These endpoints don't need authentication 
+        .anyRequest().fullyAuthenticated().and().addFilterBefore(fireBaseTokenFilter, BasicAuthenticationFilter.class) //Add authentication filter to all other endpoints 
         .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
     }
 
