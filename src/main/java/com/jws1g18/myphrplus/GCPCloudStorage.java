@@ -18,7 +18,6 @@ public class GCPCloudStorage {
     Storage storage;
     String projectID = "myphrplus-backend";
     Logger logger;
-    ABE abeController = new ABE();
 
     public GCPCloudStorage(Logger logger) {
         this.storage = StorageOptions.getDefaultInstance().getService();

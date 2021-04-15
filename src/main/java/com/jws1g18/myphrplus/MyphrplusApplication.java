@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
+import javax.net.ssl.TrustManagerFactory;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -548,11 +550,20 @@ public class MyphrplusApplication {
 			decFile = ABE.decrypt(pub, prv, file.getInputStream());
 		} catch (Exception e) {
 			logger.error("File couldn't be decrytped", e);
+			fireBase.addFileLog(user, false, fileRef, uid);
 			return new ResponseEntity<>("File could not be decrypted, May not have correct attributes",
 					HttpStatus.BAD_REQUEST);
 		}
+		if(decFile == null){
+			logger.error("Cannot decrypt, attributes in key do not satisfy policy");
+			fireBase.addFileLog(user, false, fileRef, uid);
+			return new ResponseEntity<>("File could not be decrypted, May not have correct attributes",
+					HttpStatus.BAD_REQUEST);
+		}
+
 		ByteArrayResource resFile = new ByteArrayResource(decFile);
 		logger.info("Request to download file: " + fileRef + " was successful");
+		fireBase.addFileLog(user, true, fileRef, uid);
 		return ResponseEntity.ok().contentLength(resFile.contentLength())
 				.contentType(MediaType.parseMediaType(fileType)).body(resFile);
 	}
@@ -1077,5 +1088,21 @@ public class MyphrplusApplication {
 		} else {
 			return new ResponseEntity<>(roleCheck.getMessage(), HttpStatus.BAD_REQUEST);
 		}
+	}
+
+	/**
+	 * Returns a access logs for a file, if the user has access to that file
+	 * @param fileRef File reference of file to check
+	 * @return
+	 */
+	@RequestMapping(value="/viewFileLogs", method=RequestMethod.POST)
+	public ResponseEntity<?> viewFileLogs(@RequestParam("fileRef") String fileRef){
+		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+		logger.info("Authenticated request from " + uid + " to get file logs for " + fileRef);
+		FunctionResponse logResponse = fireBase.getFileLogs(fileRef, uid);
+		if(logResponse.successful()){
+			return new ResponseEntity<>(logResponse.getMessage(), HttpStatus.OK);
+		}
+		return new ResponseEntity<>(logResponse.getMessage(), HttpStatus.BAD_REQUEST);
 	}
 }

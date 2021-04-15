@@ -1,6 +1,9 @@
 package com.jws1g18.myphrplus;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -1200,6 +1203,64 @@ public class GCPFireBase {
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Could not delete diary location for user: " + uid + " diary: " +diaryRef, e);
             return new FunctionResponse(false, "Could not delete diary");
+        }
+    }
+
+    /**
+     * Adds a log to a file reference, showing whether a request to access was successful
+     * @param user User object of user requesting access 
+     * @param successful true if decrypt was successful, false if not
+     * @param fileref File ref of file. 
+     * @param uid User ID of user requesting access
+     * @return
+     */
+    public FunctionResponse addFileLog(User user, Boolean successful, String fileref, String uid){
+        Map<String, Object> docData = new HashMap<>();
+        docData.put("name", user.name);
+        docData.put("successful", successful);
+        docData.put("date", DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).format(LocalDateTime.now()));
+        docData.put("uid", uid);
+        try {
+            this.db.collection("files").document(fileref).collection("logs").add(docData).get();
+            return new FunctionResponse(true, "Log added");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not add file log to file" + fileref, e);
+            return new FunctionResponse(false, "Log failed");
+        }
+    }
+
+    public FunctionResponse getFileLogs(String fileRef, String uid){
+        User user;
+        try {
+            user = getUserObject(uid);
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user Object for " + uid, e);
+            return new FunctionResponse(false, "Couldn't get user object");
+        }
+        if(!user.files.contains(fileRef)){
+            logger.error("User does not have access to file");
+            return new FunctionResponse(false, "Don't have access to this file");
+        }
+        QuerySnapshot qs;
+        try {
+            qs = this.db.collection("files").document(fileRef).collection("logs").get().get();
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not get user: " + uid + " diary entries");
+            return new FunctionResponse(false, "Could not find diary entries");
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
+        for(QueryDocumentSnapshot doc: qs.getDocuments()){
+            ObjectNode node = arrayNode.addObject();
+            node.put("name", doc.getString("name"));
+            node.put("date", doc.getString("date"));
+            node.put("successful", doc.getBoolean("successful"));
+        }
+        try {
+            return new FunctionResponse(true, mapper.writer().writeValueAsString(arrayNode));
+        } catch (JsonProcessingException e) {
+            logger.error("Couldn't proccess JSON", e);
+            return new FunctionResponse(false, "Couldn't process JSON");
         }
     }
 }
