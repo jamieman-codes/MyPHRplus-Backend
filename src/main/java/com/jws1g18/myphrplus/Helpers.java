@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
+
+import com.jws1g18.myphrplus.DTOS.User;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.tika.Tika;
@@ -209,5 +212,14 @@ public class Helpers {
 
     public String cleanHtml(String html){
         return Jsoup.clean(html, Whitelist.relaxed());
+    }
+
+    public boolean validateNewPatient(User patient){
+        if(Pattern.matches("/^[a-z ,.'-]+$/i", patient.name)){
+            return false;
+        } else if(Pattern.matches("/^\\d{10}$/", patient.nhsnum)){
+            return false;
+        } 
+        return true;
     }
 }

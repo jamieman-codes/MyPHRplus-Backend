@@ -8,9 +8,9 @@
 		<relativePath /> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.jws1g18</groupId>
-	<artifactId>mrphrplus</artifactId>
+	<artifactId>myphrplus</artifactId>
 	<version>1.0</version>
-	<name>mrphrplus</name>
+	<name>myphrplus</name>
 	<description>Backend for my PHR plus</description>
 
 	<properties>

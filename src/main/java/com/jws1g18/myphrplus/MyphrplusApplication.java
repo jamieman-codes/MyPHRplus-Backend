@@ -10,8 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
-
-import javax.net.ssl.TrustManagerFactory;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -67,8 +66,12 @@ public class MyphrplusApplication {
 	 */
 	@RequestMapping(method = RequestMethod.POST, path = "/registerPatient")
 	public ResponseEntity<?> registerPatient(@RequestBody User patient) {
-		logger.info("Incoming request to register Patient: " + patient.email);
+		logger.info("Incoming request to register Patient: " + patient.email + " " + patient.parent);
 		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+
+		if(!helper.validateNewPatient(patient)){
+			return new ResponseEntity<>("Invalid Form", HttpStatus.BAD_REQUEST);
+		}
 
 		// Check NHS Num
 		if(!fireBase.checkNHSnum(patient.nhsnum)){
@@ -252,6 +255,11 @@ public class MyphrplusApplication {
 	 * Encrypts and Uploads a file to cloud storage, adds reference to firestore 
 	 */
 	private ResponseEntity<?> uploadFile(String uid, MultipartFile file, String accessPolicy, String fileName, ArrayList<String> uids){
+		if(Pattern.matches("/^[a-zA-Z0-9 !@#&()`.+,/\"-]*$/", fileName)){
+			logger.error("File name: " + fileName + " not valid");
+			return new ResponseEntity<>("Invalid filename", HttpStatus.BAD_REQUEST);
+		}
+
 		// Get User object
 		User user;
 		try {
@@ -664,8 +672,9 @@ public class MyphrplusApplication {
 	@RequestMapping(value="/addUserAttribute", method=RequestMethod.POST)
 	public ResponseEntity<?> addUserAttribute( @RequestParam("identifier") String identifier, @RequestParam("attribute") String attribute){
 		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+
 		logger.info("Authenticated request from: " + uid + " to add attribute " + attribute + " to user: " +identifier);
-		if(helper.validateNewAttribute(attribute)){
+		if(helper.validateNewAttribute(attribute) && Pattern.matches("/^[a-zA-Z0-9_]*$/", attribute)){
 			logger.error("Invalid attribute entered");
 			return new ResponseEntity<>("Invalid attribute entered", HttpStatus.BAD_REQUEST);
 		}
@@ -799,6 +808,10 @@ public class MyphrplusApplication {
 	public ResponseEntity<?> addReminder( @RequestParam("nhsNum") String nhsnum, @RequestParam("reminder") String reminder){
 		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
 		logger.info("Authenticated request from: " + uid + " to add reminder: " + reminder + " to: " + nhsnum);
+
+		if(Pattern.matches("/^[a-zA-Z0-9 !@#&()`.+,/\"-]*$/", reminder)){
+			return new ResponseEntity<>("Invalid reminder entered", HttpStatus.BAD_REQUEST);
+		}
 		//Check role
 		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
@@ -891,6 +904,11 @@ public class MyphrplusApplication {
 	public ResponseEntity<?> uploadDiary( @RequestParam("name") String diaryTitle, @RequestParam("content") String diaryContent){
 		String uid = SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
 		logger.info("Authenticated request from: " + uid + " to add diary with name: " + diaryTitle);
+
+		if(Pattern.matches("/^[a-zA-Z0-9 !@#&()`.+,/\"-]*$/", diaryTitle)){
+			return new ResponseEntity<>("Invalid diary title", HttpStatus.BAD_REQUEST);
+		}
+
 		//Check role
 		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("Patient")) {
