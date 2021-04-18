@@ -9,6 +9,7 @@ import com.google.cloud.storage.Bucket;
 import com.google.cloud.storage.BucketInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
+import com.google.cloud.storage.StorageException;
 import com.google.cloud.storage.StorageOptions;
 
 import org.slf4j.Logger;
@@ -60,8 +61,13 @@ public class GCPCloudStorage {
         BlobId blobId = BlobId.of(bucketName, objectName);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setMetadata(metadata).build();
 
-        this.storage.create(blobInfo, file);
-        return new FunctionResponse(true, "Upload successful");
+        try{
+            this.storage.create(blobInfo, file);
+            return new FunctionResponse(true, "Upload successful");
+        }catch(StorageException e){
+            logger.error("Bucket not found", e);
+            return new FunctionResponse(false, "Upload failed");
+        }
     }
 
     /**
@@ -71,8 +77,13 @@ public class GCPCloudStorage {
      * @return
      */
     public ByteArrayResource downloadObject(String bucketName, String objectName) {
-        BlobId blob = BlobId.of(bucketName, objectName);
-        return new ByteArrayResource(storage.readAllBytes(blob));
+        try{
+            BlobId blob = BlobId.of(bucketName, objectName);
+            return new ByteArrayResource(storage.readAllBytes(blob));
+        }catch(StorageException e){
+            logger.error("File not found", e);
+            return null;
+        }
     }
 
     /**

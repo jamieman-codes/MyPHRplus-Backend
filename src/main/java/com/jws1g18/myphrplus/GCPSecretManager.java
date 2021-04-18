@@ -66,7 +66,7 @@ public class GCPSecretManager {
      * @param secretId ID of key to be destroyed
      * @throws IOException
      */
-    public static void destroySecretVersion(String secretId) throws IOException{
+    public static boolean destroySecretVersion(String secretId) throws IOException{
         try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
             
             SecretName secretName = SecretName.of(projectName.getProject(), secretId);
@@ -78,6 +78,7 @@ public class GCPSecretManager {
 
             client.destroySecretVersion(secretVersion.getName());
             client.close();
+            return true;
         }
     }
 
@@ -87,7 +88,7 @@ public class GCPSecretManager {
      * @param key byte array of key
      * @throws IOException
      */
-    public static void addSecretVersion(String secretId, byte[] key) throws IOException{
+    public static boolean addSecretVersion(String secretId, byte[] key) throws IOException{
         try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
             SecretName secretName = SecretName.of(projectName.getProject(), secretId);
             // Create the secret payload.
@@ -97,6 +98,7 @@ public class GCPSecretManager {
                 .build();
             client.addSecretVersion(secretName, payload);
             client.close();
+            return true;
         }
     }
 }

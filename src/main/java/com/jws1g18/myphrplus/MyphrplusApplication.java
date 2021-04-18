@@ -286,11 +286,16 @@ public class MyphrplusApplication {
 			return new ResponseEntity<>("Could not get public key", HttpStatus.BAD_REQUEST);
 		}
 		BswabePub pub = SerializeUtils.unserializeBswabePub(pubByte);
-		byte[] encFile;
+		byte[] fileBytes;
 		try {
-			encFile = ABE.encrypt(pub, accessPolicy, file.getBytes());
-		} catch (Exception e) {
-			logger.error("Could not encrypt file", e);
+			fileBytes = file.getBytes();
+		} catch (IOException e) {
+			logger.error("Could not read file", e);
+			return new ResponseEntity<>("Could not read file", HttpStatus.BAD_REQUEST);
+		}
+		byte[] encFile = ABE.encrypt(pub, accessPolicy, fileBytes);
+		if(encFile == null) {
+			logger.error("Could not encrypt file");
 			return new ResponseEntity<>("Could not encrypt file", HttpStatus.BAD_REQUEST);
 		}
 
@@ -933,11 +938,9 @@ public class MyphrplusApplication {
 				return new ResponseEntity<>("Could not get public key", HttpStatus.BAD_REQUEST);
 			}
 			BswabePub pub = SerializeUtils.unserializeBswabePub(pubByte);
-			byte[] encFile;
-			try {
-				encFile = ABE.encrypt(pub, accessPolicy, cleanContent.getBytes());
-			} catch (Exception e) {
-				logger.error("Could not encrypt diary", e);
+			byte[] encFile = ABE.encrypt(pub, accessPolicy, cleanContent.getBytes());
+			if(encFile == null){
+				logger.error("Could not encrypt diary");
 				return new ResponseEntity<>("Could not encrypt diary", HttpStatus.BAD_REQUEST);
 			}
 

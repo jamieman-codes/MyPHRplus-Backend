@@ -43,6 +43,7 @@ public class ABE {
      * @return Private key
      */
     public static BswabePrv genPrivKey(BswabePub pub, BswabeMsk msk, String[] attr) {
+        if(attr.length == 0){return null;}
         try {
             return Bswabe.keygen(pub, msk, attr);
         } catch (NoSuchAlgorithmException e) {
@@ -60,6 +61,7 @@ public class ABE {
      * @return New private key
      */
     public static BswabePrv delegatePrivKey(BswabePub pub, BswabePrv prv, String[] attr) {
+        if(attr.length == 0){return null;}
         try {
             return Bswabe.delegate(pub, prv, attr);
         } catch (NoSuchAlgorithmException | IllegalArgumentException e) {
@@ -78,20 +80,34 @@ public class ABE {
      * @return Byte array of encrypted file
      * @throws Exception
      */
-    public static byte[] encrypt(BswabePub pub, String policy, byte[] file) throws Exception {
+    public static byte[] encrypt(BswabePub pub, String policy, byte[] file) {
+        if(policy.isBlank()){
+            return null;
+        }
+
         // Encrypt the file, returns the cipher text and the key
-        BswabeCphKey cphKey = Bswabe.enc(pub, policy);
+        BswabeCphKey cphKey;
+        try {
+            cphKey = Bswabe.enc(pub, policy);
+        } catch (Exception e) {
+            return null;
+        }
         BswabeCph cph = cphKey.cph;
         Element key = cphKey.key;
 
         // Returns null if an error occured during encryption
         if (cph == null) {
-            throw new Exception();
+            return null;
         }
 
         // Use ciphertext as symmetric key for hybrid encryption (ABE only encrypts one
         // group element)
-        byte[] aesBuf = aes(key, file, Cipher.ENCRYPT_MODE);
+        byte[] aesBuf;
+        try {
+            aesBuf = aes(key, file, Cipher.ENCRYPT_MODE);
+        } catch (Exception e) {
+            return null;
+        }
 
         // Store
         byte[] cphBuf = SerializeUtils.bswabeCphSerialize(cph);
@@ -108,7 +124,7 @@ public class ABE {
      * @return Byte array of decrypted file, or Null if decryption failed
      * @throws Exception Returns an exception if decryption fails
      */
-    public static byte[] decrypt(BswabePub pub, BswabePrv prv, InputStream file) throws Exception {
+    public static byte[] decrypt(BswabePub pub, BswabePrv prv, InputStream file) {
         // Read file
         EncFile tmp = readEncFile(file);
         byte[] aesBuf = tmp.aesBuf;
@@ -120,7 +136,11 @@ public class ABE {
         BswabeElementBoolean beb = Bswabe.dec(pub, prv, cph);
         if (beb.b) {
             // Decrypt file using cipher text as symmetric key
-            return aes(beb.e, aesBuf, Cipher.DECRYPT_MODE);
+            try {
+                return aes(beb.e, aesBuf, Cipher.DECRYPT_MODE);
+            } catch (Exception e) {
+                return null;
+            }
         } else {
             return null;
         }

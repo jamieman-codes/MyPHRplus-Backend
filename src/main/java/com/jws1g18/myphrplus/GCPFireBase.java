@@ -79,7 +79,7 @@ public class GCPFireBase {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    private WriteResult addUser(Map<String, Object> data, String uid) throws InterruptedException, ExecutionException {
+    WriteResult addUser(Map<String, Object> data, String uid) throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(uid);
         ApiFuture<WriteResult> result = docRef.set(data);
         return result.get();
@@ -359,7 +359,7 @@ public class GCPFireBase {
      * @param value  Value to be added
      * @return True if successful
      */
-    public WriteResult updateArray(String userID, String array, String value)
+    WriteResult updateArray(String userID, String array, String value)
             throws InterruptedException, ExecutionException {
         DocumentReference docRef = this.db.collection("users").document(userID);
         ApiFuture<WriteResult> future = docRef.update(array, FieldValue.arrayUnion(value));
@@ -428,6 +428,38 @@ public class GCPFireBase {
         UserRecord userRecord = auth.createUser(request);
         logger.info("User created with Firebase");
         return userRecord;
+    }
+
+    /**
+     * Deletes a user from firebase.
+     * SHOULD NOT BE USED IN PRODUCTION FOR TEST CLEANUP ONLY
+     * @param uid User ID to delete
+     * @return
+     */
+    FunctionResponse deleteUserAuth(String uid){
+        try {
+            this.auth.deleteUser(uid);
+            return new FunctionResponse(true, "Delete successful");
+        } catch (FirebaseAuthException e) {
+            logger.error("Could not delete user", e);
+            return new FunctionResponse(false, "Delete failed");
+        }
+    }
+
+    /**
+     * Delets a users document from firestore
+     * SHOULD NOT BE USED IN PRODUCTION FOR TEST CLEANUP ONLY
+     * @param uid User ID to delete
+     * @return
+     */
+    FunctionResponse deleteUserFirestore(String uid){
+        try {
+            this.db.collection("users").document(uid).delete().get();
+            return new FunctionResponse(true, "Delete successful");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Could not delete user", e);
+            return new FunctionResponse(false, "Delete failed");
+        }
     }
 
     /***
