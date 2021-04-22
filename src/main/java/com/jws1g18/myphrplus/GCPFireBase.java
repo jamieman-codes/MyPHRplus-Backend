@@ -706,6 +706,9 @@ public class GCPFireBase {
         int x = 0;
         for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
             files = (ArrayList<String>) doc.get("files");
+            if(!uid.equals(doc.getString("parent"))){
+                return new FunctionResponse(false, "Do not have access to this user");
+            }
             x++;
         }
         if(x>1 || files == null){
@@ -853,7 +856,7 @@ public class GCPFireBase {
      * @param attr attribute
      * @return
      */
-    public FunctionResponse updatePatientAttributes(String nhsNum, String attr){
+    public FunctionResponse updatePatientAttributes(String nhsNum, String attr, String REQuid){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
         try {
@@ -870,6 +873,9 @@ public class GCPFireBase {
             uid = doc.getId();
             bucketName = doc.getString("bucketName");
             attributes = (ArrayList<String>) doc.get("attributes");
+            if(!REQuid.equals(doc.getString("parent"))){
+                return new FunctionResponse(false, "Do not have access to this user");
+            }
             x++;
         }
         if(x>1 || uid == null){
@@ -1066,8 +1072,8 @@ public class GCPFireBase {
      * @param nhsNum NHS num of patient
      * @return JSON array of reminders
      */
-    public FunctionResponse getPatientReminders(String nhsNum){
-        String uid = getUIDfromNHSnum(nhsNum);
+    public FunctionResponse getPatientReminders(String nhsNum, String REQuid){
+        String uid = getUIDfromNHSnum(nhsNum, REQuid);
         if(uid != null){
             return getReminders(uid);
         }
@@ -1106,8 +1112,8 @@ public class GCPFireBase {
      * @param reminder
      * @return
      */
-    public FunctionResponse addReminder(String nhsNum, String reminder){
-        String uid = getUIDfromNHSnum(nhsNum);
+    public FunctionResponse addReminder(String nhsNum, String reminder, String REQuid){
+        String uid = getUIDfromNHSnum(nhsNum, REQuid);
         if(uid != null){
             try {
                 updateArray(uid, "reminders", reminder);
@@ -1141,7 +1147,7 @@ public class GCPFireBase {
      * @param nhsNum NHS num of user
      * @return User ID
      */
-    public String getUIDfromNHSnum(String nhsNum){
+    public String getUIDfromNHSnum(String nhsNum, String REQuid){
         // Lookup patient from NHS num
         QuerySnapshot snapshot;
         try {
@@ -1153,6 +1159,9 @@ public class GCPFireBase {
         int x = 0;
         for(QueryDocumentSnapshot doc: snapshot.getDocuments()){
            uid = doc.getId();
+           if(!REQuid.equals(doc.getString("parent"))){
+                return null;
+           }
            x++;
        }
        if(x>1){

@@ -17,5 +17,5 @@ mvn spring-boot:run
 Deploy to cloud with:
 ```
 gcloud config configurations activate backend
-mvn -DskipTests package appengine:deploy
+mvn package appengine:deploy
 ```

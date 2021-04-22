@@ -694,7 +694,7 @@ public class MyphrplusApplication {
 			return new ResponseEntity<>(uid, HttpStatus.BAD_REQUEST);
 		} else // Check user is DR
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse addResponse = fireBase.updatePatientAttributes(identifier, attribute);
+			FunctionResponse addResponse = fireBase.updatePatientAttributes(identifier, attribute, uid);
 			if(addResponse.successful()){
 				logger.info("Add attribute request from: " + uid + " successfull");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
@@ -784,7 +784,7 @@ public class MyphrplusApplication {
 		//Check role
 		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse reminderResponse = fireBase.getPatientReminders(nhsnum);
+			FunctionResponse reminderResponse = fireBase.getPatientReminders(nhsnum, uid);
 			if(reminderResponse.successful()){
 				logger.info("Get reminder request successful");
 				return new ResponseEntity<>(reminderResponse.getMessage(), HttpStatus.OK);
@@ -820,7 +820,7 @@ public class MyphrplusApplication {
 		//Check role
 		FunctionResponse roleCheck = fireBase.getRole(uid);
 		if (roleCheck.successful() && roleCheck.getMessage().equals("DR")) {
-			FunctionResponse addResponse = fireBase.addReminder(nhsnum, reminder);
+			FunctionResponse addResponse = fireBase.addReminder(nhsnum, reminder, uid);
 			if(addResponse.successful()){
 				logger.info("Add request from: " + uid + " was successful");
 				return new ResponseEntity<>(addResponse.getMessage(), HttpStatus.OK);
@@ -989,7 +989,7 @@ public class MyphrplusApplication {
 			}
 			return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
 		} else if (roleCheck.successful() && roleCheck.getMessage().equals("DR")){
-			String patientUid = fireBase.getUIDfromNHSnum(identifier);
+			String patientUid = fireBase.getUIDfromNHSnum(identifier, uid);
 			FunctionResponse getResponse = fireBase.getDiaries(patientUid);
 			if(getResponse.successful()){
 				logger.info("Get diaries request from: " + uid + " successful");
@@ -1025,7 +1025,7 @@ public class MyphrplusApplication {
 				}
 				location = getResponse.getMessage();
 			} else if (roleCheck.getMessage().equals("DR")){
-				String patientUid = fireBase.getUIDfromNHSnum(identifier);
+				String patientUid = fireBase.getUIDfromNHSnum(identifier, uid);
 				FunctionResponse getResponse = fireBase.getDiaryFilelocation(diaryRef, patientUid);
 				if(!getResponse.successful()){
 					return new ResponseEntity<>(getResponse.getMessage(), HttpStatus.BAD_REQUEST);
